@@ -1,0 +1,6 @@
+file_capacity=100
+byte_capacity=104857600
+worker_threads=10
+socket_path=./tmp/LSOfiletorage.sk
+#end_of_config
+#Please remember that using run.sh, current relative path is src/..
