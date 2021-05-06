@@ -38,7 +38,7 @@ TARGETS		= bin/server
 all		: $(TARGETS)
 
 bin/server: src/main.c mylibs/libgeneral_utility.so mylibs/libserver_config.so
-	$(CC) $(INCLUDES) $(CCFLAGS) $(FLAGS) $< -o $@ -Wl,-rpath='$$ORIGIN/../mylibs',-rpath='$$ORIGIN/../src' $(LDFLAGS) $(LIBS1)
+	$(CC) $(INCLUDES) $(CCFLAGS) $(FLAGS) $< -o $@ -Wl,-rpath='$$ORIGIN/../mylibs' $(LDFLAGS) $(LIBS1)
 	echo "cd $(CURDIR)\nvalgrind --leak-check=full ./bin/server" > run_with_valgrind.sh
 	echo "cd $(CURDIR)\n./bin/server" > run.sh
 
@@ -48,11 +48,8 @@ mylibs/libserver_config.so: objs/server_config.o $(INCDIR)/server_config.h mylib
 mylibs/libgeneral_utility.so: objs/general_utility.o $(INCDIR)/general_utility.h
 	$(CC) -shared -o $@ $<
 
-objs/general_utility.o: src/general_utility.c $(INCDIR)/general_utility.h
-objs/server_config.o: src/server_config.c $(INCDIR)/server_config.h
-objs/general_utility.o objs/server_config.o:
+objs/%.o: src/%.c
 	$(CC) -fPIC $(INCLUDES) $(CCFLAGS) $< -c -o $@ 
-
 
 clean		: 
 	-rm -f $(TARGETS) $(RUN)
