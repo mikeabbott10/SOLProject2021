@@ -20,12 +20,9 @@
     Returns: EXIT_FAILURE (even with no error)
     Param: fd the file descriptor
 */
-char cleanup(FILE *fd){
+char fd_cleanup(FILE *fd){
     errno = 0;
-    fclose(fd); // we do it just once
-    if(errno!=0){
-        printf("Warning: Error %d occurred while closing config file\n", errno);
-    }
+    ec_n(fclose(fd), 0,); // we do it just once
     return EXIT_FAILURE;
 }
 
@@ -38,9 +35,7 @@ char cleanup(FILE *fd){
         fp: the file pointer
 */
 char* readLineFromFILE(char *buffer, unsigned int len, FILE *fp){
-    char *buf = fgets(buffer, len, fp);
-    if (buf == NULL)
-        return buf;
+    ec(fgets(buffer, len, fp), NULL, return NULL);
     return buffer;
 }
 
@@ -72,6 +67,8 @@ char checkConfigFileLine(char* line, int cnt){
 char populateConfigStruct(char* line){
     char *save = NULL;
     char *key, *value;
+    /*char key[256], value[256];
+    sscanf(line, "%255[^=]=%255[^\n]%*c", key, value);*/
     key = strtok_r(line, "=", &save);
     value = strtok_r(NULL, "\n", &save);
     if(strncmp(key, "file_capacity", 13) == 0){
@@ -82,6 +79,9 @@ char populateConfigStruct(char* line){
             return EXIT_FAILURE;
     }else if(strncmp(key, "worker_threads", 14) == 0){
         if(isInteger(value, &(config_struct.worker_threads))!=0)
+            return EXIT_FAILURE;
+    }else if(strncmp(key, "max_connections", 15) == 0){
+        if(isInteger(value, &(config_struct.max_connections))!=0)
             return EXIT_FAILURE;
     }else if(strncmp(key, "socket_path", 11) == 0){
         config_struct.socket_path = strdup(value); /*needs to be freed*/
@@ -99,10 +99,10 @@ char parseConfigFile(char* configFilePath){
     char returnVal = EXIT_SUCCESS;
 
     FILE* fdi = fopen(configFilePath, "r");
-    esc(fdi, NULL, "Opening input file", return EXIT_FAILURE);
+    ec(fdi, NULL, return EXIT_FAILURE);
 
-    char *buffer = malloc(bufSize);
-    esc(buffer, NULL, "Allocation went bad", return cleanup(fdi));
+    char *buffer;
+    ec(buffer = calloc(bufSize, sizeof(char)), NULL, return fd_cleanup(fdi));
 
     int i = 0; /*counts the lines*/
     while(readLineFromFILE(buffer, bufSize, fdi) != NULL){
@@ -119,7 +119,31 @@ char parseConfigFile(char* configFilePath){
             break;
         }
     }
-    cleanup(fdi);
+    fd_cleanup(fdi);
     free(buffer);
     return returnVal;
+}
+
+/*--------- Signal handling part---------------------------------------------------*/
+/*
+    Overview: initializes sigmask for the server process
+    Returns: the new set
+*/
+sigset_t initSigMask(){
+    sigset_t set;
+    /*we want to handle these signals, we will do it with sigwait*/
+    ec( sigemptyset(&set), -1, exit(EXIT_FAILURE) ); /*empty mask*/
+    ec( sigaddset(&set, SIGINT), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
+    ec( sigaddset(&set, SIGQUIT), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
+    ec( sigaddset(&set, SIGTSTP), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
+    ec( sigaddset(&set, SIGHUP), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
+    ec( pthread_sigmask(SIG_SETMASK, &set, &procOldMask), -1, exit(EXIT_FAILURE) );
+    return set;
+}
+
+/*
+    Overview: restores the original mask of the process
+*/
+void restoreOldMask(){
+    ec( pthread_sigmask(SIG_SETMASK, &procOldMask, NULL), -1, );
 }

@@ -14,9 +14,9 @@ INCLUDES	= -I $(INCDIR)
 # librerie da linkare a tutti i files (es. -lm per le librerie matematiche)
 LDFLAGS 	= -pthread
 # altre librerie  (es. -L<path> -lmylib)
-LIBS1		= -L "./mylibs" -lgeneral_utility -lserver_config
+LIBS1		= -L "./mylibs" -lgeneral_utility -lserver_config -lconnection_util
 # flags di ottimizzazione 
-OPTFLAGS	= # -O3
+OPTFLAGS	= -O3
 # flags di debugging
 DBGFLAGS        = -g
 FLAGS           = $(DBGFLAGS)
@@ -37,10 +37,13 @@ TARGETS		= bin/server
 # root target
 all		: $(TARGETS)
 
-bin/server: src/main.c mylibs/libgeneral_utility.so mylibs/libserver_config.so
+bin/server: src/main.c mylibs/libgeneral_utility.so mylibs/libserver_config.so mylibs/libconnection_util.so
 	$(CC) $(INCLUDES) $(CCFLAGS) $(FLAGS) $< -o $@ -Wl,-rpath='$$ORIGIN/../mylibs' $(LDFLAGS) $(LIBS1)
 	echo "cd $(CURDIR)\nvalgrind --leak-check=full ./bin/server" > run_with_valgrind.sh
 	echo "cd $(CURDIR)\n./bin/server" > run.sh
+
+mylibs/libconnection_util.so: objs/connection_util.o $(INCDIR)/connection_util.h mylibs/libgeneral_utility.so
+	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility
 
 mylibs/libserver_config.so: objs/server_config.o $(INCDIR)/server_config.h mylibs/libgeneral_utility.so
 	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility
