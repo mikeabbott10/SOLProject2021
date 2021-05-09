@@ -1,10 +1,9 @@
-#define _POSIX_C_SOURCE 200809L /*for strdup and strtok_r*/
+#include <server_config.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<errno.h>
 #include<string.h>
 #include <general_utility.h>
-#include <server_config.h>
 
 /*
     Overview: closes a file descriptor

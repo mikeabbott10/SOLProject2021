@@ -1,6 +1,6 @@
+#include<server_config.h>
 #include<stdio.h>
 #include<stdlib.h>
-#include<server_config.h>
 #include<general_utility.h>
 #include<connection_util.h>
 
