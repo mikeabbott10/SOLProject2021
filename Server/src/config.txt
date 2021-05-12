@@ -1,7 +1,7 @@
 file_capacity=100
 byte_capacity=104857600
 worker_threads=10
-max_connections=500
-socket_path=./tmp/LSOfiletorage.sk
+max_connections_buffer_size=500
+socket_path=../LSOfiletorage.sk
 #end_of_config
 #Please remember that using run.sh, current relative path is src/..

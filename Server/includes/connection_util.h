@@ -1,37 +1,70 @@
 #if !defined(_CONNECTION_UTIL_H)
 #define _CONNECTION_UTIL_H
+#include<generic_shared_buffer.h>
 #include<stdio.h>
+#include<stdlib.h>
 #include<pthread.h>
+#include <sys/select.h>
+
+typedef struct msg {
+    int len;
+    char *str;
+} msg_t;
 
 /*client abstraction*/
-typedef struct{
-    int fd; /*client descriptor*/
-    
-    int next_msg_length; /*length of the next message to receive from the client, -1 if no message incoming*/
-    /*TODO: THINK THIS IS USELESS -> */char* message; /*the last message the client sent to the server*/
+typedef long client_fd_t;
+void* clientBuffer; /*it will be a of type *client_fd_buffer */
 
-    int action; /* NONE, OPENING_FILE, CLOSING_FILE, READING_FILE, WRITING_FILE, APPENDING_TO_FILE, LOCKING_FILE, UNLOCKING_FILE, REMOVING_FILE*/
-    char* action_related_file_path; /*the file path the client wants to perform an action on*/
+#include<filesystem_util.h>
+
+// TODO
+typedef struct{
+    client_fd_t client_fd;
+    file_t* opened_files;
+    file_t* locked_files;
 } client_t;
 
-/* Implements a client FIFO buffer */
-typedef struct {
-    client_t* buffer; /*the buffer of clients*/
+/*request abstraction*/
+typedef struct{
+    client_fd_t client_fd;
 
-    size_t capacity; /*capacity of the buffer*/
-    size_t start; /*index of the first valid item*/
-    size_t end; /*index of the last item*/
+    char action; /* OPEN_FILE, CLOSE_FILE, READ_FILE, WRITE_FILE, APPEND_TO_FILE, LOCK_FILE, UNLOCK_FILE, REMOVE_FILE*/
+    char* action_related_file_path; /*the file path the client wants to perform an action on*/
+} request_t;
 
-    pthread_mutex_t mux; /*access to the buffer in mutual exclusion*/
-    pthread_cond_t not_anymore_empty; /*condition variable for buffer emptiness*/
-    pthread_cond_t not_anymore_full; /*condition variable for buffer fullness*/
-} client_buffer_t;
+/*termination flag*/
+#define HARD_QUIT 2
+#define SOFT_QUIT 1
+char quit_level = 0;
+char globalQuit = 0;
 
-client_buffer_t* client_buffer_create(size_t);
-void client_buffer_free(client_buffer_t*);
-void client_buffer_put(client_buffer_t*, client_t);
-client_t client_buffer_get(client_buffer_t*);
+/*used buffers*/
+declare_shared_buffer_use(client_fd_t, client_fd_buffer);
 
-client_buffer_t* clientBuffer = NULL;
+pthread_t master_tid;
+int master_progress = 0;
+void master_clean_exit(int, int*);
+int updatemax(fd_set, int);
+int readn(long, void*, size_t);
+int writen(long, void*, size_t);
+
+int currentClientConnections = 0;
+
+/*master/workers pipe*/
+int pipefd[2];
+/*int currentPipeMsgCount = 0;
+char clientFDFromPipeToSet(fd_set*);
+pthread_mutex_t pipe_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t pipe_not_read_yet = PTHREAD_COND_INITIALIZER;*/
+
+/*signal/master pipe*/
+int signalPipefd[2];
+
+/*workers util*/
+pthread_t *worker_threads;
+typedef void* (*workerFun)(void*);
+char spawnWorkers(int, workerFun);
+int sendStringTo(int, char*);
+int getClientRequest(int clientFD, request_t* request);
 
 #endif

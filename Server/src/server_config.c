@@ -1,50 +1,51 @@
-#include <server_config.h>
+#define _POSIX_C_SOURCE 200809L /*for strdup and strtok_r*/
 #include<stdio.h>
 #include<stdlib.h>
 #include<errno.h>
 #include<string.h>
 #include <general_utility.h>
+#include <server_config.h>
 
-/*
-    Overview: closes a file descriptor
-        From the manual:
-        Many implementations always close the file descriptor (except in the 
-        case of  EBADF,  meaning that  the  file  descriptor  was  invalid) 
-        even if they subsequently report an error on return from close().
-        POSIX.1 is currently silent on this point, but there are plans to 
-        mandate this behavior in the next major release of the standard.
-        
-        On many implementations, close() must not be called again after 
-        an EINTR error, and on at least one, close() must be called again.
-    Returns: EXIT_FAILURE (even with no error)
-    Param: fd the file descriptor
-*/
+/**
+ * Close a file descriptor
+ * @param fd: the file descriptor
+ * @return EXIT_FAILURE (even with no error)
+ */
 char fd_cleanup(FILE *fd){
+    /*From the manual:
+     *  Many implementations always close the file descriptor (except in the 
+     *  case of  EBADF,  meaning that  the  file  descriptor  was  invalid) 
+     *  even if they subsequently report an error on return from close().
+     *  POSIX.1 is currently silent on this point, but there are plans to 
+     *  mandate this behavior in the next major release of the standard.
+     *     
+     *  On many implementations, close() must not be called again after 
+     *  an EINTR error, and on at least one, close() must be called again.
+    */
     errno = 0;
     ec_n(fclose(fd), 0,); // we do it just once
     return EXIT_FAILURE;
 }
 
-/*
-    Overview: Reads one line from one file and stores it in a buffer
-    Returns: the buffer or NULL
-    Params:
-        buffer: the buffer we store the line in
-        len: the buffer length
-        fp: the file pointer
-*/
+/**
+ * Read one line from one file and stores it in a buffer
+ * @param buffer: the buffer we store the line in
+ * @param len: the buffer length
+ * @param fp: the file pointer
+ * @return the buffer, or NULL
+ */
 char* readLineFromFILE(char *buffer, unsigned int len, FILE *fp){
     ec(fgets(buffer, len, fp), NULL, return NULL);
     return buffer;
 }
 
-/*
-    Overview: checks for config file line validity.
-    Returns: EXIT_SUCCESS if everything's ok, EXIT_FAILURE if something wrong
-    Params:
-        line: the line of the file
-        fd: the config file descriptor
-*/
+/**
+ * Check for config file line validity.
+ * @param line: the line of the file
+ * @param fd: the config file descriptor
+ * @return EXIT_SUCCESS if everything's ok, 
+ *         EXIT_FAILURE if something goes wrong
+ */
 char checkConfigFileLine(char* line, int cnt){
     if(strchr(line, '\n') == NULL && line[0] != '#'){
         printf("Line %d is more than 250 characters. This is not allowed.\n", cnt);
@@ -53,23 +54,25 @@ char checkConfigFileLine(char* line, int cnt){
     return EXIT_SUCCESS;
 }
 
-/*
-    Overview: updates one field of the server configuration structure (config_struct)
-        From the manual:
-        The strtok_s function differs from the POSIX strtok_r function 
-        by guarding against storing outside of the string being tokenized, 
-        and by checking runtime constraints. On correctly written programs, 
-        though, the strtok_s and strtok_r behave the same.
-    Returns: EXIT_SUCCESS if everything's ok, EXIT_FAILURE if line is invalid (key not recognized or invalid value)
-    Param: line one line from the config file
-*/
+/**
+ * Update one field of the server configuration structure (config_struct)
+ * @param line: one line from the config file
+ * @return EXIT_SUCCESS if everything's ok, 
+ *         EXIT_FAILURE if line is invalid (key not recognized or invalid value)
+ */
 char populateConfigStruct(char* line){
     char *save = NULL;
     char *key, *value;
-    /*char key[256], value[256];
-    sscanf(line, "%255[^=]=%255[^\n]%*c", key, value);*/
+    /*From the manual:
+     *  The strtok_s function differs from the POSIX strtok_r function 
+     *  by guarding against storing outside of the string being tokenized, 
+     *  and by checking runtime constraints. On correctly written programs, 
+     *  though, the strtok_s and strtok_r behave the same.
+    */
     key = strtok_r(line, "=", &save);
     value = strtok_r(NULL, "\n", &save);
+    /*char key[256], value[256];
+    sscanf(line, "%255[^=]=%255[^\n]%*c", key, value);*/
     if(strncmp(key, "file_capacity", 13) == 0){
         if(isInteger(value, &(config_struct.file_capacity))!=0)
             return EXIT_FAILURE;
@@ -79,8 +82,8 @@ char populateConfigStruct(char* line){
     }else if(strncmp(key, "worker_threads", 14) == 0){
         if(isInteger(value, &(config_struct.worker_threads))!=0)
             return EXIT_FAILURE;
-    }else if(strncmp(key, "max_connections", 15) == 0){
-        if(isInteger(value, &(config_struct.max_connections))!=0)
+    }else if(strncmp(key, "max_connections_buffer_size", 27) == 0){
+        if(isInteger(value, &(config_struct.max_connections_buffer_size))!=0)
             return EXIT_FAILURE;
     }else if(strncmp(key, "socket_path", 11) == 0){
         config_struct.socket_path = strdup(value); /*needs to be freed*/
@@ -89,10 +92,12 @@ char populateConfigStruct(char* line){
     return EXIT_SUCCESS;
 }
 
-/*
-    Overview: Parses the config file and populates the config struct
-    param: config file path
-*/
+/**
+ * Parse the config file and populates the config struct
+ * @param configFilePath: the config file path
+ * @return EXIT_SUCCESS if everything's ok, 
+ *         EXIT_FAILURE if something goes wrong
+ */
 char parseConfigFile(char* configFilePath){
     int bufSize = 256;
     char returnVal = EXIT_SUCCESS;
@@ -124,10 +129,10 @@ char parseConfigFile(char* configFilePath){
 }
 
 /*--------- Signal handling part---------------------------------------------------*/
-/*
-    Overview: initializes sigmask for the server process
-    Returns: the new set
-*/
+/**
+ * Initialize sigmask for the server process
+ * @return the new set
+ */
 sigset_t initSigMask(){
     sigset_t set;
     /*we want to handle these signals, we will do it with sigwait*/
@@ -140,9 +145,9 @@ sigset_t initSigMask(){
     return set;
 }
 
-/*
-    Overview: restores the original mask of the process
-*/
+/**
+ * Restore the original mask of the process
+ */
 void restoreOldMask(){
     ec( pthread_sigmask(SIG_SETMASK, &procOldMask, NULL), -1, );
 }

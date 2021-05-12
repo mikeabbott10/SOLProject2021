@@ -14,7 +14,7 @@ INCLUDES	= -I $(INCDIR)
 # librerie da linkare a tutti i files (es. -lm per le librerie matematiche)
 LDFLAGS 	= -pthread
 # altre librerie  (es. -L<path> -lmylib)
-LIBS1		= -L "./mylibs" -lgeneral_utility -lserver_config -lconnection_util -lfilesystem_util
+LIBS1		= -L "./mylibs" -lgeneral_utility -lconn
 # flags di ottimizzazione 
 OPTFLAGS	= -O3
 # flags di debugging
@@ -22,7 +22,7 @@ DBGFLAGS        = -g
 FLAGS           = $(DBGFLAGS)
 ARFLAGS         = rvs
 
-TARGETS		= bin/server
+TARGETS		= bin/client
 
 # ld.so understands the string $ORIGIN (or equivalently ${ORIGIN}) in 
 # an rpath specification to mean the directory containing the application 
@@ -32,25 +32,17 @@ TARGETS		= bin/server
 # located in the directory hierarchy.
 
 
-.PHONY: all clean cleanall# test1 test2 test3
+.PHONY: all clean cleanall
 
 # root target
 all		: $(TARGETS)
 
-bin/server: src/main.c mylibs/libgeneral_utility.so mylibs/libserver_config.so mylibs/libconnection_util.so mylibs/libfilesystem_util.so
+bin/client: src/main.c mylibs/libgeneral_utility.so mylibs/libconn.so
 	$(CC) $(INCLUDES) $(CCFLAGS) $(FLAGS) $< -o $@ -Wl,-rpath='$$ORIGIN/../mylibs' $(LDFLAGS) $(LIBS1)
-	echo "cd $(CURDIR)\nvalgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./bin/server" > run_with_valgrind.sh
-	echo "cd $(CURDIR)\n./bin/server" > run.sh
+	echo "cd $(CURDIR)\nvalgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./bin/client" > run_with_valgrind.sh
+	echo "cd $(CURDIR)\n./bin/client" > run.sh
 
-#valgrind --log-file="gino${a}.txt" --leak-check=full --show-leak-kinds=all --track-origins=yes
-
-mylibs/libconnection_util.so: objs/connection_util.o $(INCDIR)/connection_util.h mylibs/libgeneral_utility.so
-	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility
-
-mylibs/libfilesystem_util.so: objs/filesystem_util.o $(INCDIR)/filesystem_util.h mylibs/libgeneral_utility.so
-	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility
-
-mylibs/libserver_config.so: objs/server_config.o $(INCDIR)/server_config.h mylibs/libgeneral_utility.so
+mylibs/libconn.so: objs/conn.o $(INCDIR)/conn.h mylibs/libgeneral_utility.so
 	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility
 
 mylibs/libgeneral_utility.so: objs/general_utility.o $(INCDIR)/general_utility.h
@@ -60,6 +52,6 @@ objs/%.o: src/%.c
 	$(CC) -fPIC $(INCLUDES) $(CCFLAGS) $< -c -o $@ 
 
 clean		: 
-	-rm -f $(TARGETS) $(RUN) ../*.sk
+	-rm -f $(TARGETS) $(RUN)
 cleanall	: clean
-	-rm -f $(TARGETS) $(RUN) *~ objs/* mylibs/* ../*.sk
+	-rm -f $(TARGETS) $(RUN) *~ objs/* mylibs/*
