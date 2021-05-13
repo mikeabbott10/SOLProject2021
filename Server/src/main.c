@@ -76,7 +76,7 @@ void* workers_fun(void* p){
         if(globalQuit) break;
         
         request_t request;
-        getClientRequest(clientFD, &request);
+        printf("getClientRequest returns: %d", getClientRequest(clientFD, &request));
         
         close(clientFD);
 

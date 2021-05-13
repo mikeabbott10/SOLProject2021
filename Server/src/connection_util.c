@@ -168,24 +168,37 @@ int sendStringTo(int fd, char* str){
  *      1 if it ends up successfully
  */
 int getClientRequest(int clientFD, request_t* request){
-    char msgLenBuf[9], *msgBuf;
+    char *msgLenBuf, *msgBuf;
     int msgLen, bytesRead;
 
-    if((bytesRead = readn(clientFD, msgLenBuf, 9)) <= 0) 
+    ec( msgLenBuf = calloc(9 + 1, sizeof(char)), NULL, return -1 );
+    if((bytesRead = readn(clientFD, msgLenBuf, 9)) <= 0){
+        free(msgLenBuf);
         return bytesRead; /* return -1 or 0 */
+    }
     printf("Len:\n%s\n", msgLenBuf);
-    ec_n( isInteger(msgLenBuf, &msgLen), 0, return -2 );
+    if( isInteger(msgLenBuf, &msgLen) != 0){
+        free(msgLenBuf);
+        return -2;
+    }
 
-    ec( msgBuf = calloc(msgLen + 1, sizeof(char)), NULL, return -1 );
+    if( (msgBuf = calloc(msgLen + 1, sizeof(char))) == NULL){
+        free(msgLenBuf);
+        return -1;
+    }
     /*note that we trust our server (just a school project)*/
-    if((bytesRead = readn(clientFD, msgBuf, msgLen)) <= 0) 
+    if((bytesRead = readn(clientFD, msgBuf, msgLen)) <= 0){
+        free(msgLenBuf);
+        free(msgBuf);
         return bytesRead; /* return -1 or 0 */
+    }
     printf("Msg:\n%s\n", msgBuf);
 
     //parseMessage(msgBuf, request);
     //getResponse();
     sendStringTo(clientFD, "OK");
 
+    free(msgLenBuf);
     free(msgBuf);
     return 1;
 }

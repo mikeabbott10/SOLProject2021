@@ -97,20 +97,33 @@ int writen(long fd, void *buf, size_t size) {
  *      1 if it ends up successfully
  */
 int getServerMessage(int socketFD, char **msg){
-    char msgLenBuf[9], *msgBuf;
+    char *msgLenBuf, *msgBuf;
     int msgLen, bytesRead;
     
-    if((bytesRead = readn(socketFD, msgLenBuf, 9)) <= 0) 
+    ec( msgLenBuf = calloc(9 + 1, sizeof(char)), NULL, return -1 );
+    if((bytesRead = readn(socketFD, msgLenBuf, 9)) <= 0){
+        free(msgLenBuf);
         return bytesRead; /* return -1 or 0 */
+    }
     printf("Len:\n%s\n", msgLenBuf);
-    ec_n( isInteger(msgLenBuf, &msgLen), 0, return -2 );
-    
-    ec( msgBuf = calloc(msgLen + 1, sizeof(char)), NULL, return -1 );
+    if( isInteger(msgLenBuf, &msgLen) != 0){
+        free(msgLenBuf);
+        return -2;
+    }
+
+    if( (msgBuf = calloc(msgLen + 1, sizeof(char))) == NULL){
+        free(msgLenBuf);
+        return -1;
+    }
     /*note that we trust our server (just a school project)*/
-    if((bytesRead = readn(socketFD, msgBuf, msgLen)) <= 0) 
+    if((bytesRead = readn(socketFD, msgBuf, msgLen)) <= 0){
+        free(msgLenBuf);
+        free(msgBuf);
         return bytesRead; /* return -1 or 0 */
+    }
     printf("Msg:\n%s\n", msgBuf);
 
+    free(msgLenBuf);
     *msg = msgBuf;
     return 1;
 }

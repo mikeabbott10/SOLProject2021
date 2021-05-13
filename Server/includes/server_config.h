@@ -1,5 +1,6 @@
 #if !defined(_SERVER_CONFIG_H)
 #define _SERVER_CONFIG_H
+#define _POSIX_C_SOURCE 200809L
 #include<signal.h>
 #include<pthread.h>
 
