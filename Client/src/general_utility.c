@@ -1,8 +1,11 @@
+#include<general_utility.h>
 #include<stdlib.h>
 #include<stdio.h>
 #include<errno.h>
 #include<limits.h>
 #include <stdarg.h>
+#include <time.h>
+
 
 /**
  * Checks if the evaluation of s is an integer and puts the value in n.
@@ -65,4 +68,16 @@ char* intToStr(int n){
     if(str==NULL) return NULL;
     snprintf( str, length + 1, "%09d", n );
     return str;
+}
+
+/**
+ * Get current time in milliseconds
+ * @return current time in milliseconds
+ */
+uint64_t get_now_time2() {
+    struct timespec spec;
+    if (clock_gettime(CLOCK_REALTIME, &spec) == -1) {
+        return 0;
+    }
+    return spec.tv_sec * 1000 + spec.tv_nsec / 1e6;
 }

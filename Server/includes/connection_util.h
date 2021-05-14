@@ -12,7 +12,7 @@ typedef struct msg {
 } msg_t;
 
 /*client abstraction*/
-typedef long client_fd_t;
+typedef int client_fd_t;
 void* clientBuffer; /*it will be a of type *client_fd_buffer */
 
 #include<filesystem_util.h>

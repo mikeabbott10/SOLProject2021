@@ -55,11 +55,15 @@ int main(int args, char** argv){
     ec( spawnWorkers(config_struct.worker_threads, &workers_fun), EXIT_FAILURE, exit(EXIT_FAILURE) );
     progress_level_up;
 
-    pthread_join(sig_handler_tid, NULL);
-    pthread_join(master_tid, NULL);
+
     int i = 0;
     for(;i<config_struct.worker_threads ; ++i)
         pthread_join(worker_threads[i], NULL);
+    /*if we are here after worker threads died prematurely, send SIGINT to the signal handler thread*/
+    if(!globalQuit)
+        pthread_kill(sig_handler_tid, SIGINT);
+    pthread_join(sig_handler_tid, NULL);
+    pthread_join(master_tid, NULL);
 
     return EXIT_SUCCESS;
 }
@@ -69,20 +73,31 @@ int main(int args, char** argv){
  * @param p: the args passed to the thread
  */
 void* workers_fun(void* p){
+    int connStatus;
+    request_t request;
+    client_fd_t clientFD;
     while(!globalQuit){
-        /* get a client fd */
-        client_fd_t clientFD = shared_buffer_get(client_fd_buffer, client_fd_t, clientBuffer, (client_fd_t)-1);
-        puts("PASSO");
-        if(globalQuit) break;
+        /* get a client fd, if -1 is returned then we are quitting*/
+        if( (clientFD = shared_buffer_get(client_fd_buffer, client_fd_t, clientBuffer, (client_fd_t)-1)) == -1 )
+            break;
         
-        request_t request;
-        printf("getClientRequest returns: %d", getClientRequest(clientFD, &request));
+        connStatus = getClientRequest(clientFD, &request);
+        printf("getClientRequest returns: %d\n", connStatus);
+        fflush(stdout);
+        if(connStatus == 0 || connStatus == -2){
+            close(clientFD);
+            continue;
+        }else if(connStatus == -1)
+            /*we lose a hero here*/
+            break;
         
-        close(clientFD);
+        /*we got a valid request*/
+        // TODO: eseguo l'azione richiesta dal client
 
-        // una volta che il messaggio è completato:
-        //      1- eseguo l'azione richiesta dal client
-        //      2- inserisco passo il client_fd al master scrivendolo sulla pipe
+        /*reset request allocated memory*/
+        memset(&request, 0, sizeof(request));
+        /*get this client fd back to the master, if -1 is returned then we cry a hero here*/
+        ec( write(pipefd[1], &clientFD, sizeof(clientFD)), -1, break );
     }
     return NULL;
 }
@@ -149,7 +164,7 @@ void * master_fun(void* p){
                     }
                     continue;
                 }else if(fd == signalPipefd[0]){
-                    puts("\t ricevuto sig da master");
+                    puts("\t master got a termination signal");
                     if(quit_level == HARD_QUIT){
                         break;
                     }else continue;

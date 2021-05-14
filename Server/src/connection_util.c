@@ -176,7 +176,7 @@ int getClientRequest(int clientFD, request_t* request){
         free(msgLenBuf);
         return bytesRead; /* return -1 or 0 */
     }
-    printf("Len:\n%s\n", msgLenBuf);
+    printf("Len:%s\n", msgLenBuf);
     if( isInteger(msgLenBuf, &msgLen) != 0){
         free(msgLenBuf);
         return -2;
@@ -192,7 +192,7 @@ int getClientRequest(int clientFD, request_t* request){
         free(msgBuf);
         return bytesRead; /* return -1 or 0 */
     }
-    printf("Msg:\n%s\n", msgBuf);
+    printf("Msg:%s\n", msgBuf);
 
     //parseMessage(msgBuf, request);
     //getResponse();

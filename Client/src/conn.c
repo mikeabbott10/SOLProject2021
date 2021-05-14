@@ -23,7 +23,7 @@ int sendStringTo(int fd, char* str){
     }
     strncat(string, msgLenAsString, strlen(msgLenAsString));
     strncat(string, msg.str, msg.len);
-    printf("SCRIVO:\n%s", string); // debug
+    printf("SCRIVO:\n%s\n", string); // debug
     fflush(stdout);
     errno = 0;
     int writenRet = writen(fd, string, strlen(string));

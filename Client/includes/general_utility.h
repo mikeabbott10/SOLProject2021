@@ -1,5 +1,7 @@
 #if !defined(_GENERAL_UTILITY_H)
 #define _GENERAL_UTILITY_H
+#define _POSIX_C_SOURCE 200809L
+#include <stdint.h>
 
 /*Equality Check*/
 #define ec(s, r, c)         \
@@ -11,5 +13,6 @@
 char isInteger(const char*, int*);
 int max(int, ...);
 char* intToStr(int n);
+uint64_t get_now_time2();
 
 #endif
