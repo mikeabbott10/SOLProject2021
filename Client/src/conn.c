@@ -1,45 +1,5 @@
 #include<conn.h>
 
-/**
- * Write the string str on the file descriptor fd
- * @param fd: the file descriptor
- * @param str: the string to write
- * @return -1 if error occurred (errno is setted up), 0 if write returns 0, size if it ends up successfully
- */
-int sendStringTo(int fd, char* str){
-    msg_t msg;
-    msg.len = strlen(str);
-    ec( msg.str = strndup(str, strlen(str)), NULL, return -1);
-    char *msgLenAsString;
-    if( (msgLenAsString = intToStr(msg.len)) == NULL){
-        free(msg.str);
-        return -1;
-    }
-    char *string;
-    if( (string = calloc(strlen(msgLenAsString) + 1 + msg.len + 1, sizeof(char))) == NULL){
-        free(msgLenAsString);
-        free(msg.str);
-        return -1;
-    }
-    strncat(string, msgLenAsString, strlen(msgLenAsString));
-    strncat(string, msg.str, msg.len);
-    printf("SCRIVO:\n%s\n", string); // debug
-    fflush(stdout);
-    errno = 0;
-    int writenRet = writen(fd, string, strlen(string));
-    if(writenRet == -1){
-        perror("writen(fd, string, strlen(string))");
-        free(string);
-        free(msgLenAsString);
-        free(msg.str);
-        return -1;
-    }
-    free(string);
-    free(msgLenAsString);
-    free(msg.str);
-    return writenRet;
-}
-
 /*----------- I/O utils ----------------------------------------*/
 /**
  * Read "size" bytes from a descriptor avoiding partial reads
@@ -100,8 +60,8 @@ int getServerMessage(int socketFD, char **msg){
     char *msgLenBuf, *msgBuf;
     int msgLen, bytesRead;
     
-    ec( msgLenBuf = calloc(9 + 1, sizeof(char)), NULL, return -1 );
-    if((bytesRead = readn(socketFD, msgLenBuf, 9)) <= 0){
+    ec( msgLenBuf = calloc(MSG_LEN_LENGTH + 1, sizeof(char)), NULL, return -1 );
+    if((bytesRead = readn(socketFD, msgLenBuf, MSG_LEN_LENGTH)) <= 0){
         free(msgLenBuf);
         return bytesRead; /* return -1 or 0 */
     }
@@ -115,15 +75,132 @@ int getServerMessage(int socketFD, char **msg){
         free(msgLenBuf);
         return -1;
     }
-    /*note that we trust our server (just a school project)*/
+    /*note that we trust our server*/
     if((bytesRead = readn(socketFD, msgBuf, msgLen)) <= 0){
         free(msgLenBuf);
         free(msgBuf);
         return bytesRead; /* return -1 or 0 */
     }
     printf("Msg:\n%s\n", msgBuf);
-
+    
     free(msgLenBuf);
     *msg = msgBuf;
     return 1;
+}
+
+/**
+ * Write content on the file descriptor fd
+ * @param fd: the file descriptor
+ * @param content: content to write
+ * @param length: the content length in bytes
+ * @return -1 if error occurred (errno is setted up), 0 if write returns 0, 1 if it ends up successfully
+ */
+int sendTo(int fd, char* content, int length){
+    msg_t msg;
+    msg.len = length;
+    char *msgLenAsString;
+    if( (msgLenAsString = intToStr(msg.len, MSG_LEN_LENGTH)) == NULL)
+        return -1;
+    if( (msg.content = calloc(strlen(msgLenAsString) + msg.len + 1, sizeof(char))) == NULL ){
+        free(msgLenAsString);
+        return -1;
+    }
+
+    msg.content = memmove(msg.content, msgLenAsString, strlen(msgLenAsString));
+    memmove(msg.content+strlen(msgLenAsString), content, msg.len);
+
+    /*update msg.len*/
+    msg.len = strlen(msgLenAsString) + msg.len;
+    /*printf("Invio->");
+    fwrite(msg.content, 1, msg.len, stdout); // debug
+    puts("");
+    fflush(stdout);*/
+    errno = 0;
+    int writenRet = writen(fd, msg.content, msg.len);
+    if(writenRet == -1){
+        free(msgLenAsString);
+        free(msg.content);
+        return -1;
+    }
+    free(msgLenAsString);
+    free(msg.content);
+    return 1;
+}
+
+/* we make a NULL msg_t value on an existinf msg_t */
+msg_t getNullMessage(msg_t *msg){
+    msg->content = NULL;
+    msg->len = 0;
+    return *msg;
+}
+
+/**
+ * Build a message in order to send it to the other side.
+ * @param req: the action to perform
+ * @param flags: the flags of the request
+ * @param filePath: the path of the file we want to perform an action on
+ * @param content: the content of the file
+ * @param contentLength: the content length in bytes
+ * @return the msg_t
+ */ 
+msg_t buildMessage(char req, char flags, const char* filePath, char* content, int contentLength){
+    /*
+      Format: "AAAAFFFFLLLLLLLLLfilePathLLLLLLLLLcontent"
+      Meaning:  AAAA -> 4 bytes representing the action to perform
+                FFFF -> 4 bytes representing the flags of the request
+                LLLLLLLLL -> 9 bytes representing the length of the file path
+                filePath -> the filePath
+                LLLLLLLLL -> 9 bytes representing the length of the file path
+                content -> the file content
+    */
+    msg_t msg;
+    /*req*/
+    char *reqAsString;
+    if( (reqAsString = intToStr(req, 4)) == NULL)
+        return getNullMessage(&msg);
+    /*flags*/
+    char *flagsAsString;
+    if( (flagsAsString = intToStr(flags, 4)) == NULL){
+        free(reqAsString);
+        return getNullMessage(&msg);
+    }
+    /*filePath length*/
+    char *filePathLengthAsString;
+    int pathLength = strlen(filePath);
+    if( (filePathLengthAsString = intToStr(pathLength, 9)) == NULL){
+        free(flagsAsString);
+        free(reqAsString);
+        return getNullMessage(&msg);
+    }
+    /*content length*/
+    char *contentLengthAsString;
+    if( (contentLengthAsString = intToStr(contentLength, 9)) == NULL){
+        free(filePathLengthAsString);
+        free(flagsAsString);
+        free(reqAsString);
+        return getNullMessage(&msg);
+    }
+
+    if( (msg.content = calloc(4 + 4 + 9 + pathLength + 9 + contentLength + 1, sizeof(char))) == NULL ){
+        free(contentLengthAsString);
+        free(filePathLengthAsString);
+        free(flagsAsString);
+        free(reqAsString);
+        return getNullMessage(&msg);
+    }
+
+    msg.content = memmove(msg.content, reqAsString, 4);
+    memmove(msg.content + 4, flagsAsString, 4);
+    memmove(msg.content + 4 + 4, filePathLengthAsString, 9);
+    memmove(msg.content + 4 + 4 + 9, filePath, pathLength);
+    memmove(msg.content + 4 + 4 + 9 + pathLength, contentLengthAsString, 9);
+    if(contentLength != 0)
+        memmove(msg.content + 4 + 4 + 9 + pathLength + 9, content, contentLength);
+    msg.len = 4 + 4 + 9 + pathLength + 9 + contentLength;
+
+    free(contentLengthAsString);
+    free(filePathLengthAsString);
+    free(flagsAsString);
+    free(reqAsString);
+    return msg;
 }

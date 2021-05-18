@@ -1,7 +1,0 @@
-{
-    "files.associations": {
-        "connection_util.h": "c",
-        "generic_shared_buffer.h": "c",
-        "string": "c"
-    }
-}

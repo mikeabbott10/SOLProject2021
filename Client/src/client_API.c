@@ -1,4 +1,6 @@
+#include<general_utility.h>
 #include<client_API.h>
+#include<conn.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
@@ -23,6 +25,9 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
     serv_addr.sun_family = AF_UNIX;
     strncpy(serv_addr.sun_path, sockname, strlen(sockname)+1);
 
+    ec( sockPath = calloc(strlen(sockname)+1, sizeof(char)), NULL, return EXIT_FAILURE );
+    strncpy(sockPath, sockname, strlen(sockname)+1);
+
     /*get how many ms we can try on*/
     uint64_t stop_abs_ms = abstime.tv_sec * 1000 + abstime.tv_nsec / 1e6;
     uint64_t abs_ms = get_now_time();
@@ -38,15 +43,155 @@ int openConnection(const char* sockname, int msec, const struct timespec abstime
     }
     return res;
 }
-/*
+
+/**
+ * Close the connection to the socket sockname if it's already opened.
+ * @return: 0 if the connection is closed, -1 if something wrong (errno is setted up)
+ */ 
 int closeConnection(const char* sockname){
-
+    if(strncmp(sockname, sockPath, strlen(sockPath))==0){
+        free(sockPath);
+        return close(sockfd);
+    }else{
+        errno = EBADF;
+        return -1;
+    }
 }
 
+/**
+ * Send an open-file request or a create-file request to the server. It depends on flags.
+ * @param pathname: the path of the file on the server
+ * @param flags: specify the open mode
+ * @return: 0 if file is opened, -1 if we fail (errno is setted up)
+ */
 int openFile(const char* pathname, int flags){
-
+    msg_t msg = buildMessage(OPEN, flags, pathname, NULL, 0);
+    if( sendTo(sockfd, msg.content, msg.len) != 1){
+        free(msg.content);
+        return -1;
+    }
+    int retVal = -1;
+    char *response = NULL;
+    if(getServerMessage(sockfd, &response)==1){
+        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
+            retVal = 0;
+        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
+            errno = ENOENT;
+        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
+            errno = EPERM;
+    }
+    if(response!=NULL) free(response);
+    free(msg.content);
+    return retVal;
 }
 
+/**
+ * Send a close-file request to the server. Any action on the pathname file after the closeFile fails.
+ * @param pathname: the path of the file on the server
+ * @return: 0 if file is closed, -1 if we fail (errno is setted up)
+ */
+int closeFile(const char* pathname){
+    msg_t msg = buildMessage(CLOSE, NO_FLAGS, pathname, NULL, 0);
+    if( sendTo(sockfd, msg.content, msg.len) != 1){
+        free(msg.content);
+        return -1;
+    }
+    int retVal = -1;
+    char *response = NULL;
+    if(getServerMessage(sockfd, &response)==1){
+        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
+            retVal = 0;
+        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
+            errno = ENOENT;
+        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
+            errno = EPERM;
+    }
+    if(response!=NULL) free(response);
+    free(msg.content);
+    return retVal;
+}
+
+/**
+ * Send a lock-file request to the server.
+ * @param pathname: the path of the file on the server
+ * @return: 0 if file is locked or the request is pending, -1 if we fail (errno is setted up)
+ */
+int lockFile(const char* pathname){
+    msg_t msg = buildMessage(LOCK, NO_FLAGS, pathname, NULL, 0);
+    if( sendTo(sockfd, msg.content, msg.len) != 1){
+        free(msg.content);
+        return -1;
+    }
+    int retVal = -1;
+    char *response = NULL;
+    if(getServerMessage(sockfd, &response)==1){
+        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
+            retVal = 0;
+        else if(strncmp(response, PENDING_REQ_RESPONSE, 3)==0)
+            retVal = 0;
+        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
+            errno = ENOENT;
+        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
+            errno = EPERM;
+    }
+    if(response!=NULL) free(response);
+    free(msg.content);
+    return retVal;
+}
+
+/**
+ * Send an unlock-file request to the server.
+ * @param pathname: the path of the file on the server
+ * @return: 0 if file is unlocked, -1 if we fail (errno is setted up)
+ */
+int unlockFile(const char* pathname){
+    msg_t msg = buildMessage(UNLOCK, NO_FLAGS, pathname, NULL, 0);
+    if( sendTo(sockfd, msg.content, msg.len) != 1){
+        free(msg.content);
+        return -1;
+    }
+    int retVal = -1;
+    char *response = NULL;
+    if(getServerMessage(sockfd, &response)==1){
+        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
+            retVal = 0;
+        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
+            errno = ENOENT;
+        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
+            errno = EPERM;
+    }
+    if(response!=NULL) free(response);
+    free(msg.content);
+    return retVal;
+}
+
+/**
+ * Send a remove-file request to the server.
+ * @param pathname: the path of the file on the server
+ * @return: 0 if file is removed, -1 if we fail (errno is setted up)
+ */
+int removeFile(const char* pathname){
+    msg_t msg = buildMessage(REMOVE, NO_FLAGS, pathname, NULL, 0);
+    if( sendTo(sockfd, msg.content, msg.len) != 1){
+        free(msg.content);
+        return -1;
+    }
+    int retVal = -1;
+    char *response = NULL;
+    if(getServerMessage(sockfd, &response)==1){
+        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
+            retVal = 0;
+        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
+            errno = ENOENT;
+        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
+            errno = EPERM;
+    }
+    if(response!=NULL) free(response);
+    free(msg.content);
+    return retVal;
+}
+
+/*
 int readFile(const char* pathname, void** buf, size_t* size){
 
 }
@@ -61,20 +206,4 @@ int writeFile(const char* pathname, const char* dirname){
 
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname){
 
-}
-
-int lockFile(const char* pathname){
-
-}
-
-int unlockFile(const char* pathname){
-
-}
-
-int closeFile(const char* pathname){
-    
-}
-
-int removeFile(const char* pathname){
-    
 }*/

@@ -6,22 +6,39 @@
 #include<pthread.h>
 #include <sys/select.h>
 
+#define MSG_LEN_LENGTH 9
+#define FINE_REQ_RESPONSE "OK"
+#define PENDING_REQ_RESPONSE "PR"
+#define WRONG_FILEPATH_RESPONSE "WFP"
+#define NOT_PERMITTED_ACTION_RESPONSE "NPA"
+
+#define NO_FLAGS 0x00
+#define O_CREATE 0x01
+#define O_LOCK 0x02
+#define OPEN 0x03
+#define CLOSE 0x04
+#define READ 0x05
+#define READ_N 0x06
+#define WRITE 0x07
+#define APPEND 0x08
+#define LOCK 0x09
+#define UNLOCK 0x0a
+#define REMOVE 0x0b
+
 typedef struct msg {
     int len;
-    char *str;
+    char *content;
 } msg_t;
 
 /*client abstraction*/
 typedef int client_fd_t;
-void* clientBuffer; /*it will be a of type *client_fd_buffer */
-
-#include<filesystem_util.h>
+void* clientBuffer; /*it will be a client_fd_buffer* */
 
 // TODO
 typedef struct{
     client_fd_t client_fd;
-    file_t* opened_files;
-    file_t* locked_files;
+    void* opened_files; /*will be file_t* */
+    void* locked_files; /*will be file_t* */
 } client_t;
 
 /*request abstraction*/
@@ -64,7 +81,7 @@ int signalPipefd[2];
 pthread_t *worker_threads;
 typedef void* (*workerFun)(void*);
 char spawnWorkers(int, workerFun);
-int sendStringTo(int, char*);
+int sendTo(int, char*, int);
 int getClientRequest(int clientFD, request_t* request);
 
 #endif

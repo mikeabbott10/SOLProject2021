@@ -10,6 +10,6 @@
 
 char isInteger(const char*, int*);
 int max(int, ...);
-char* intToStr(int n);
+char* intToStr9(int n);
 
 #endif

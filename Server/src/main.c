@@ -87,16 +87,20 @@ void* workers_fun(void* p){
         if(connStatus == 0 || connStatus == -2){
             close(clientFD);
             continue;
-        }else if(connStatus == -1)
-            /*we lose a hero here*/
-            break;
+        }else if(connStatus == -1) 
+            /*client closed connection while server was writing to it OR one allocation failed*/
+            continue;
         
-        /*we got a valid request*/
+        /*we got a request*/
         // TODO: eseguo l'azione richiesta dal client
+        if( sendTo(clientFD, "NPA", 3)!=1)
+            /*client closed connection while server was writing to it*/
+            continue;
+        
 
         /*reset request allocated memory*/
         memset(&request, 0, sizeof(request));
-        /*get this client fd back to the master, if -1 is returned then we cry a hero here*/
+        /*get this client fd back to the master, if -1 is returned then we cry a hero here because of an internal error*/
         ec( write(pipefd[1], &clientFD, sizeof(clientFD)), -1, break );
     }
     return NULL;

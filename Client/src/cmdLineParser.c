@@ -64,6 +64,7 @@ int parseCmdLine(int argc, char**argv, mainList_t *ml){
                 strcpy(ml->d_dirname, optarg);
                 break;
             case 'R':/* Reads n random files from the server (if n=0, reads every file) */
+                ml->R_n = 0;
                 if(optarg!=NULL){
                     if( isInteger(optarg, &(ml->R_n)) != 0 ){
                         fprintf(stderr, "-R option requires an integer.\n");
@@ -133,7 +134,7 @@ int parseCmdLine(int argc, char**argv, mainList_t *ml){
  * @param ml: the mainList_t
  */ 
 void freeList(mainList_t ml){
-    /*print main list*/
+    /* print main list*/
     /* printf("mainList:\n"); */
     if(ml.f_socketpath!=NULL){ 
         /* printf("char *f_socketpath -> %s\n", ml.f_socketpath); */
@@ -153,7 +154,7 @@ void freeList(mainList_t ml){
         /* printf("char* d_dirname -> %s\n", ml.d_dirname); */
         free(ml.d_dirname);
     }
-        /*printf("int t_time -> %d\n", ml.t_time);
+        /* printf("int t_time -> %d\n", ml.t_time);
         printf("char p -> %d\n", ml.p); */
 
     if(ml.W_filenames!=NULL){
@@ -190,7 +191,7 @@ void freeStuff(char **str_arr, int i_max){
         free(str_arr[i++]);
     }
     if(str_arr!=NULL) free(str_arr);
-    puts("");
+    /* puts(""); */
 }
 
 /**
@@ -293,7 +294,7 @@ void initML(mainList_t *ml){
     ml->l_itemsCount = 0;
     ml->u_itemsCount = 0;
     ml->p = 0;
-    ml->R_n = 0;
+    ml->R_n = -1;
     ml->t_time = 0;
     ml->w_n = 0;
 }

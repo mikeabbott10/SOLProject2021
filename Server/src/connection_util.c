@@ -120,41 +120,51 @@ int writen(long fd, void *buf, size_t size) {
 }
 
 /**
- * Write the string str on the file descriptor fd
+ * Write content on the file descriptor fd
  * @param fd: the file descriptor
- * @param str: the string to write
- * @return -1 if error occurred (errno is setted up), 0 if write returns 0, size if it ends up successfully
+ * @param content: content to write
+ * @param length: the content length in bytes
+ * @return -1 if error occurred (errno is setted up), 0 if write returns 0, 1 if it ends up successfully
  */
-int sendStringTo(int fd, char* str){
+int sendTo(int fd, char* content, int length){
     msg_t msg;
-    msg.len = strlen(str);
-    ec( msg.str = strndup(str, strlen(str)), NULL, return -1);
+    msg.len = length;
     char *msgLenAsString;
-    if( (msgLenAsString = intToStr(msg.len)) == NULL){
-        free(msg.str);
+    if( (msgLenAsString = intToStr9(msg.len)) == NULL)
         return -1;
-    }
-    char *string;
-    if( (string = calloc(strlen(msgLenAsString) + 1 + msg.len + 1, sizeof(char))) == NULL){
+    if( (msg.content = calloc(strlen(msgLenAsString) + msg.len + 1, sizeof(char))) == NULL ){
         free(msgLenAsString);
-        free(msg.str);
         return -1;
     }
-    strncat(string, msgLenAsString, strlen(msgLenAsString));
-    strncat(string, msg.str, msg.len);
+    if( (msg.content = memmove(msg.content, msgLenAsString, strlen(msgLenAsString))) == NULL ){
+        free(msgLenAsString);
+        free(msg.content);
+        errno = EFAULT;
+        return -1;
+    }
+    if( memmove(msg.content+strlen(msgLenAsString), content, msg.len) == NULL ){
+        free(msgLenAsString);
+        free(msg.content);
+        errno = EFAULT;
+        return -1;
+    }
+
+    /*update msg.len*/
+    msg.len = strlen(msgLenAsString) + msg.len;
+    printf("Invio->");
+    fwrite(msg.content, 1, msg.len, stdout); // debug
+    puts("");
+    fflush(stdout);
     errno = 0;
-    int writenRet = writen(fd, string, strlen(string));
+    int writenRet = writen(fd, msg.content, msg.len);
     if(writenRet == -1){
-        perror("writen(fd, string, strlen(string))");
-        free(string);
         free(msgLenAsString);
-        free(msg.str);
+        free(msg.content);
         return -1;
     }
-    free(string);
     free(msgLenAsString);
-    free(msg.str);
-    return writenRet;
+    free(msg.content);
+    return 1;
 }
 
 /**
@@ -171,8 +181,8 @@ int getClientRequest(int clientFD, request_t* request){
     char *msgLenBuf, *msgBuf;
     int msgLen, bytesRead;
 
-    ec( msgLenBuf = calloc(9 + 1, sizeof(char)), NULL, return -1 );
-    if((bytesRead = readn(clientFD, msgLenBuf, 9)) <= 0){
+    ec( msgLenBuf = calloc(MSG_LEN_LENGTH + 1, sizeof(char)), NULL, return -1 );
+    if((bytesRead = readn(clientFD, msgLenBuf, MSG_LEN_LENGTH)) <= 0){
         free(msgLenBuf);
         return bytesRead; /* return -1 or 0 */
     }
@@ -194,9 +204,9 @@ int getClientRequest(int clientFD, request_t* request){
     }
     printf("Msg:%s\n", msgBuf);
 
+    //TODO
     //parseMessage(msgBuf, request);
-    //getResponse();
-    sendStringTo(clientFD, "OK");
+    //msg_t msg = getResponse();
 
     free(msgLenBuf);
     free(msgBuf);

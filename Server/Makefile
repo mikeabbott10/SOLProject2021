@@ -1,7 +1,7 @@
 # The current absolute path (please run make from ./Server directory)
 CURDIR = ${PWD}
 # RUN bash script
-RUN = run.sh run_with_valgrind.sh
+RUN = run.sh valgrind_run.sh
 
 # compilatore da usare
 CC		=  gcc
@@ -39,8 +39,12 @@ all		: $(TARGETS)
 
 bin/server: src/main.c mylibs/libgeneral_utility.so mylibs/libserver_config.so mylibs/libconnection_util.so mylibs/libfilesystem_util.so
 	$(CC) $(INCLUDES) $(CCFLAGS) $(FLAGS) $< -o $@ -Wl,-rpath='$$ORIGIN/../mylibs' $(LDFLAGS) $(LIBS1)
-	echo "cd $(CURDIR)\nvalgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./bin/server" > run_with_valgrind.sh
-	echo "cd $(CURDIR)\n./bin/server" > run.sh
+	
+	echo "#!/bin/bash\ncd $(CURDIR)\nvalgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./bin/server" > valgrind_run.sh
+	chmod +x ./valgrind_run.sh
+
+	echo "#!/bin/bash\ncd $(CURDIR)\n./bin/server" > run.sh
+	chmod +x ./run.sh
 
 #valgrind --log-file="gino${a}.txt" --leak-check=full --show-leak-kinds=all --track-origins=yes
 

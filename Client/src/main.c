@@ -15,6 +15,7 @@ int main(int argc, char **argv){
         print_usage(argv[0]);
         return -1;
     }
+    
     /*get list of operations to perform*/
     mainList_t ml;
     initML(&ml);
@@ -23,8 +24,12 @@ int main(int argc, char **argv){
         return EXIT_FAILURE;
     }
 
-    /*check if socket path was specified*/
-    if(ml.f_socketpath==NULL) return EXIT_FAILURE;
+    /*check if socket path was specified, -D and -w/-W dependency and -d and -r/-R dependency*/
+    if(ml.f_socketpath==NULL || (ml.D_dirname!=NULL && ml.w_dirname==NULL && ml.W_filenames == NULL) 
+            ||(ml.d_dirname!=NULL && ml.r_filenames==NULL && ml.R_n==-1)){
+        freeList(ml);
+        return EXIT_FAILURE;
+    }
 
     /*perform operations through API*/
     struct timespec spec;
@@ -32,8 +37,14 @@ int main(int argc, char **argv){
     spec.tv_sec += 5; /*try for 5 seconds at least*/
     /*first operation*/
     openConnection(ml.f_socketpath, ml.t_time, spec);
+    
+    ec_n( openFile("/file/path(14)", O_CREATE|O_LOCK), 0, );
+    ec_n( closeFile("/file/path(14)"), 0, );
+    ec_n( lockFile("/file/path(14)"), 0, );
+    ec_n( unlockFile("/file/path(14)"), 0, );
+    ec_n( removeFile("/file/path(14)"), 0, );
 
-    close(sockfd);
+    closeConnection(ml.f_socketpath);
     
     freeList(ml);
     return 0;

@@ -59,7 +59,7 @@ int max(int args, ...){
  * @param n: the number
  * @return the string or NULL
  */ 
-char* intToStr(int n){
+char* intToStr9(int n){
     int length = snprintf( NULL, 0, "%09d", n);
     char* str = malloc( length + 1 );
     if(str==NULL) return NULL;

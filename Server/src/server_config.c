@@ -141,6 +141,8 @@ sigset_t initSigMask(){
     ec( sigaddset(&set, SIGQUIT), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
     ec( sigaddset(&set, SIGTSTP), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
     ec( sigaddset(&set, SIGHUP), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
+    /*Note that SIGPIPE is thrown when we try to write to a closed fd*/
+    ec( sigaddset(&set, SIGPIPE), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
     ec( pthread_sigmask(SIG_SETMASK, &set, &procOldMask), -1, exit(EXIT_FAILURE) );
     return set;
 }

@@ -12,7 +12,8 @@
 
 char isInteger(const char*, int*);
 int max(int, ...);
-char* intToStr(int n);
-uint64_t get_now_time2();
+char* intToStr(int,int);
+uint64_t get_now_time();
+void msleep(long);
 
 #endif
