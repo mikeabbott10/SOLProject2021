@@ -8,8 +8,10 @@
 #define ec_n(s, r, c)       \
     if ((s) != (r)){ perror(#s); c; }
 
+#define SET_MAX(max,n) max = (n > max) ? n : max
+
 char isInteger(const char*, int*);
 int max(int, ...);
-char* intToStr9(int n);
+char* intToStr(int, int);
 
 #endif

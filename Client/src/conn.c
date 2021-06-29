@@ -148,9 +148,9 @@ msg_t buildMessage(char req, char flags, const char* filePath, char* content, in
       Format: "AAAAFFFFLLLLLLLLLfilePathLLLLLLLLLcontent"
       Meaning:  AAAA -> 4 bytes representing the action to perform
                 FFFF -> 4 bytes representing the flags of the request
-                LLLLLLLLL -> 9 bytes representing the length of the file path
+                LLLLLLLLL -> 9 bytes representing the length of the file path in bytes
                 filePath -> the filePath
-                LLLLLLLLL -> 9 bytes representing the length of the file path
+                LLLLLLLLL -> 9 bytes representing the length of the content in bytes
                 content -> the file content
     */
     msg_t msg;
@@ -190,13 +190,18 @@ msg_t buildMessage(char req, char flags, const char* filePath, char* content, in
     }
 
     msg.content = memmove(msg.content, reqAsString, 4);
-    memmove(msg.content + 4, flagsAsString, 4);
-    memmove(msg.content + 4 + 4, filePathLengthAsString, 9);
-    memmove(msg.content + 4 + 4 + 9, filePath, pathLength);
-    memmove(msg.content + 4 + 4 + 9 + pathLength, contentLengthAsString, 9);
+    msg.len = 4;
+    memmove(msg.content + msg.len, flagsAsString, 4);
+    msg.len += 4;
+    memmove(msg.content + msg.len, filePathLengthAsString, 9);
+    msg.len += 9;
+    memmove(msg.content + msg.len, filePath, pathLength);
+    msg.len += pathLength;
+    memmove(msg.content + msg.len, contentLengthAsString, 9);
+    msg.len += 9;
     if(contentLength != 0)
-        memmove(msg.content + 4 + 4 + 9 + pathLength + 9, content, contentLength);
-    msg.len = 4 + 4 + 9 + pathLength + 9 + contentLength;
+        memmove(msg.content + msg.len, content, contentLength);
+    msg.len += contentLength;
 
     free(contentLengthAsString);
     free(filePathLengthAsString);

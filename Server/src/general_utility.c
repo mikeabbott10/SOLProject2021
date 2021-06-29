@@ -55,14 +55,19 @@ int max(int args, ...){
 }
 
 /**
- * Allocate one string and write the value of n in it. The returned string has 9 characters.
- * @param n: the number
+ * Allocate one string and write the value of n (>=0) in it. The returned string has strLen characters.
+ * @param n: the number > 0
+ * @param strLen: the final length of the generated string
  * @return the string or NULL
  */ 
-char* intToStr9(int n){
-    int length = snprintf( NULL, 0, "%09d", n);
+char* intToStr(int n, int strLen){
+    if(n<0 || n>pow(10,strLen)){
+        puts("intToStr: n not valid for conversion");
+        return NULL;
+    }
+    int length = snprintf( NULL, 0, "%0*d", strLen, n);
     char* str = malloc( length + 1 );
     if(str==NULL) return NULL;
-    snprintf( str, length + 1, "%09d", n );
+    snprintf( str, length + 1, "%0*d", strLen, n );
     return str;
 }

@@ -45,8 +45,11 @@ typedef struct{
 typedef struct{
     client_fd_t client_fd;
 
-    char action; /* OPEN_FILE, CLOSE_FILE, READ_FILE, WRITE_FILE, APPEND_TO_FILE, LOCK_FILE, UNLOCK_FILE, REMOVE_FILE*/
+    char action; /* OPEN, CLOSE, READ, READ_N, WRITE, 
+                    APPEND, LOCK, UNLOCK, REMOVE */
+    char action_flags; /*NO_FLAGS, O_CREATE, O_LOCK*/
     char* action_related_file_path; /*the file path the client wants to perform an action on*/
+    char* content; /*the content of the file, if needed*/
 } request_t;
 
 /*termination flag*/
@@ -69,10 +72,6 @@ int currentClientConnections = 0;
 
 /*master/workers pipe*/
 int pipefd[2];
-/*int currentPipeMsgCount = 0;
-char clientFDFromPipeToSet(fd_set*);
-pthread_mutex_t pipe_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t pipe_not_read_yet = PTHREAD_COND_INITIALIZER;*/
 
 /*signal/master pipe*/
 int signalPipefd[2];
@@ -83,5 +82,7 @@ typedef void* (*workerFun)(void*);
 char spawnWorkers(int, workerFun);
 int sendTo(int, char*, int);
 int getClientRequest(int clientFD, request_t* request);
+int parseMessage(char*, int, request_t*);
+msg_t performActionAndGetResponse(request_t);
 
 #endif

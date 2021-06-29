@@ -81,11 +81,15 @@ static inline void safe_mutex_unlock(pthread_mutex_t* mux){
         b->buffer = (T*)malloc((capacity + 1) * sizeof(T));            \
         if(b->buffer == NULL){                                         \
             free(b);                                                   \
-            b = NULL;                                                  \
+            return NULL;                                               \
         }else{                                                         \
-            pthread_mutex_init(&(b->mux), NULL);                       \
-            pthread_cond_init(&(b->not_anymore_empty), NULL);          \
-            pthread_cond_init(&(b->not_anymore_full), NULL);           \
+            if( pthread_mutex_init(&(b->mux), NULL) != 0 ||            \
+            pthread_cond_init(&(b->not_anymore_empty), NULL) != 0 ||   \
+            pthread_cond_init(&(b->not_anymore_full), NULL) != 0 ){    \
+                free(b->buffer);                                       \
+                free(b);                                               \
+                return NULL;                                           \
+            }                                                          \
         }                                                              \
         return b;                                                      \
     }                                                                  \
@@ -144,10 +148,51 @@ static inline void safe_mutex_unlock(pthread_mutex_t* mux){
     }                                                                  \
 
 
+
+/**
+ * Get the next item from the buffer. If buffer is empty, wait for a new item.
+ * @param BT: the declared buffer type
+ * @param T: the type of the items in the buffer
+ * @param b: the buffer we want to get the item from
+ * @param n: a NULL value for the type T
+ * @return the item popped out from the buffer
+ */
 #define shared_buffer_get(BT, T, b, n) shared_buffer_get_##BT(b, n)
+
+/**
+ * Initialize the buffer
+ * @param BT: the declared buffer type
+ * @param T: the type of the items in the buffer
+ * @param capacity: the capacity of the buffer
+ * @return 
+ *      the initialized buffer if everything's ok
+ *      NULL otherwise
+ */
 #define shared_buffer_create(BT, T, capacity) shared_buffer_create_##BT(capacity)
+
+/**
+ * Put an item in the buffer. If buffer is full, wait.
+ * @param BT: the declared buffer type
+ * @param T: the type of the items in the buffer
+ * @param b: the buffer we want to put the item in
+ * @param x: the item
+ */
 #define shared_buffer_put(BT, T, b, x) shared_buffer_put_##BT(b, x)
+
+/**
+ * Destroy the buffer freeing the memory
+ * @param BT: the declared buffer type
+ * @param T: the type of the items in the buffer
+ * @param b: the buffer we want to put the item in
+ */
 #define shared_buffer_free(BT, T, b) shared_buffer_free_##BT(b)
+
+/**
+ * Broadcast a signal to every waiting thread
+ * @param BT: the declared buffer type
+ * @param T: the type of the items in the buffer
+ * @param b: the buffer instance
+ */
 #define shared_buffer_artificial_signal(BT, T, b) shared_buffer_artificial_signal_##BT(b)
 
 #endif

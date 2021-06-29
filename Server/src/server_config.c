@@ -93,10 +93,36 @@ char populateConfigStruct(char* line){
 }
 
 /**
+ * Init config structure
+ */
+void initConfigStruct(){
+    config_struct.byte_capacity = -1;
+    config_struct.file_capacity = -1;
+    config_struct.max_connections_buffer_size = -1;
+    config_struct.socket_path = NULL;
+    config_struct.worker_threads = -1;
+}
+
+/**
+ * Check the configuration values
+ * @return
+ *      EXIT_FAILURE if any value is wrong
+ *      EXIT_SUCCESS otherwise
+ */
+int checkConfigStructValues(){
+    if( config_struct.byte_capacity <= 0 || config_struct.file_capacity <= 0 || 
+            config_struct.max_connections_buffer_size <= 0 ||
+            config_struct.socket_path == NULL || config_struct.worker_threads <= 0 )
+        return EXIT_FAILURE;
+    return EXIT_SUCCESS;
+}
+
+/**
  * Parse the config file and populates the config struct
  * @param configFilePath: the config file path
- * @return EXIT_SUCCESS if everything's ok, 
- *         EXIT_FAILURE if something goes wrong
+ * @return 
+ *      EXIT_SUCCESS if everything's ok, 
+ *      EXIT_FAILURE if something goes wrong
  */
 char parseConfigFile(char* configFilePath){
     int bufSize = 256;
@@ -107,6 +133,8 @@ char parseConfigFile(char* configFilePath){
 
     char *buffer;
     ec(buffer = calloc(bufSize, sizeof(char)), NULL, return fd_cleanup(fdi));
+    
+    initConfigStruct();
 
     int i = 0; /*counts the lines*/
     while(readLineFromFILE(buffer, bufSize, fdi) != NULL){
@@ -123,8 +151,11 @@ char parseConfigFile(char* configFilePath){
             break;
         }
     }
+    
     fd_cleanup(fdi);
     free(buffer);
+    if( checkConfigStructValues() == EXIT_FAILURE )
+        return EXIT_FAILURE;
     return returnVal;
 }
 

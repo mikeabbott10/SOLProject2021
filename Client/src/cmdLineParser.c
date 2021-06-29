@@ -283,6 +283,7 @@ void initML(mainList_t *ml){
     ml->f_socketpath = NULL;
     ml->D_dirname = NULL;
     ml->d_dirname = NULL;
+    ml->w_dirname = NULL;
     ml->c_filenames = NULL;
     ml->W_filenames = NULL;
     ml->r_filenames = NULL;

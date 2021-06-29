@@ -33,6 +33,7 @@ void master_clean_exit(int listen_fd, int* int_arr){
     if(master_progress>=1) close(listen_fd);
     if(master_progress>=2) free(int_arr);
     shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);
+
     pthread_exit(NULL);
     //exit(EXIT_FAILURE);
 }
@@ -46,27 +47,6 @@ int updatemax(fd_set set, int fdmax) {
     	if (FD_ISSET(i, &set)) return i;
     return -1; /*never reached*/
 }
-
-/**
- * Get fd from pipe and add it to a fd set
- * @param set: the set we add the fd to
- * @return 1 if something wrong, 0 otherwise
- */
-/*char clientFDFromPipeToSet(fd_set *set){
-    safe_mutex_lock(&(pipe_mutex));
-    int fd_from_pipe;
-    if(read(pipefd[0], &fd_from_pipe, sizeof(fd_from_pipe)) <= 0){
-        //unlock everything but exit with error
-        pthread_cond_signal(&(pipe_not_read_yet));
-        safe_mutex_unlock(&(pipe_mutex));
-        return EXIT_FAILURE;
-    } 
-    FD_SET(fd_from_pipe, set);  // fd added to the set
-    currentPipeMsgCount --;
-    pthread_cond_signal(&(pipe_not_read_yet));
-    safe_mutex_unlock(&(pipe_mutex));
-    return EXIT_SUCCESS;
-}*/
 
 /*----------- I/O utils ----------------------------------------*/
 /**
@@ -101,7 +81,10 @@ int readn(long fd, void *buf, size_t size) {
  * @param fd: the file descriptor
  * @param buf: the source buffer
  * @param size: the number of bytes we want to write
- * @return -1 if error occurred (errno is setted up), 0 if write returns 0, size if it ends up successfully
+ * @return 
+ *      -1 if error occurred (errno is setted up), 
+ *      0 if write returns 0, 
+ *      size if it ends up successfully
  */
 int writen(long fd, void *buf, size_t size) {
     size_t left = size;
@@ -124,13 +107,16 @@ int writen(long fd, void *buf, size_t size) {
  * @param fd: the file descriptor
  * @param content: content to write
  * @param length: the content length in bytes
- * @return -1 if error occurred (errno is setted up), 0 if write returns 0, 1 if it ends up successfully
+ * @return 
+ *      -1 if error occurred (errno is setted up), 
+ *      0 if write returns 0, 
+ *      1 if it ends up successfully
  */
 int sendTo(int fd, char* content, int length){
     msg_t msg;
     msg.len = length;
     char *msgLenAsString;
-    if( (msgLenAsString = intToStr9(msg.len)) == NULL)
+    if( (msgLenAsString = intToStr(msg.len, 9)) == NULL)
         return -1;
     if( (msg.content = calloc(strlen(msgLenAsString) + msg.len + 1, sizeof(char))) == NULL ){
         free(msgLenAsString);
@@ -172,7 +158,8 @@ int sendTo(int fd, char* content, int length){
  * @param clientFD: the client socket
  * @param request: the request to override
  * @return 
- *      -2 if parsing error occurred
+ *      -3 if no space for allocation,
+ *      -2 if parsing error occurred,
  *      -1 if fatal error occurred (errno is setted up), 
  *      0 if EOF is read, 
  *      1 if it ends up successfully
@@ -181,12 +168,12 @@ int getClientRequest(int clientFD, request_t* request){
     char *msgLenBuf, *msgBuf;
     int msgLen, bytesRead;
 
-    ec( msgLenBuf = calloc(MSG_LEN_LENGTH + 1, sizeof(char)), NULL, return -1 );
+    ec( msgLenBuf = calloc(MSG_LEN_LENGTH + 1, sizeof(char)), NULL, return -3 );
     if((bytesRead = readn(clientFD, msgLenBuf, MSG_LEN_LENGTH)) <= 0){
         free(msgLenBuf);
         return bytesRead; /* return -1 or 0 */
     }
-    printf("Len:%s\n", msgLenBuf);
+    /*printf("Len:%s\n", msgLenBuf);*/
     if( isInteger(msgLenBuf, &msgLen) != 0){
         free(msgLenBuf);
         return -2;
@@ -194,21 +181,155 @@ int getClientRequest(int clientFD, request_t* request){
 
     if( (msgBuf = calloc(msgLen + 1, sizeof(char))) == NULL){
         free(msgLenBuf);
-        return -1;
+        return -3;
     }
-    /*note that we trust our server (just a school project)*/
+    /*note that we trust our server*/
     if((bytesRead = readn(clientFD, msgBuf, msgLen)) <= 0){
         free(msgLenBuf);
         free(msgBuf);
         return bytesRead; /* return -1 or 0 */
     }
-    printf("Msg:%s\n", msgBuf);
+    /*printf("Msg:%s\n", msgBuf);*/
 
-    //TODO
-    //parseMessage(msgBuf, request);
-    //msg_t msg = getResponse();
-
+    int parseRet = parseMessage(msgBuf, bytesRead, request);
     free(msgLenBuf);
     free(msgBuf);
+
+    request->client_fd = clientFD;
+    return parseRet;
+}
+
+/**
+ * Parse the client request message
+ * @param message: the string to parse
+ * @param len: the message length
+ * @param request: the pointer to the request "object" to set up
+ * @return:
+ *      -3 if no space for allocation (errno is setted up), 
+ *      -2 if parsing error occurred,
+ *      1 if it ends up successfully
+*/
+int parseMessage(char* message, int len, request_t* request){
+    /*
+      Format: "AAAAFFFFLLLLLLLLLfilePathLLLLLLLLLcontent"
+      Meaning:  AAAA -> 4 bytes representing the action to perform
+                FFFF -> 4 bytes representing the flags of the request
+                LLLLLLLLL -> 9 bytes representing the length of the file path in bytes
+                filePath -> the filePath
+                LLLLLLLLL -> 9 bytes representing the length of the content in bytes
+                content -> the file content
+    */
+    /*action*/
+    char *temp;
+    if( (temp = strndup(message, 4)) == NULL) return -3;
+    int action;
+    if( isInteger(temp, &action) != 0 || action < 0x03 || action > 0x0b){
+        free(temp);
+        return -2;
+    }
+    request->action = (char) action;
+    free(temp);
+    /*flags*/
+    message+=4; /*first F*/
+    if( (temp = strndup(message, 4)) == NULL) return -3;
+    int flags;
+    if( isInteger(temp, &flags) != 0 || flags < 0x00 || flags > 0x03){
+        free(temp);
+        return -2;
+    }
+    request->action_flags = (char) flags;
+    free(temp);
+
+    /*path length*/
+    message+=4; /*first L*/
+    if( (temp = strndup(message, 9)) == NULL) return -3;
+    int path_len;
+    if( isInteger(temp, &path_len) != 0 || path_len < 0){
+        free(temp);
+        return -2;
+    }
+    free(temp);
+    /*path*/
+    message+=9; /*first filePath char*/
+    if(path_len != 0){
+        if( (request->action_related_file_path = strndup(message, path_len)) == NULL) 
+            return -3;
+    }else
+        request->action_related_file_path = NULL;
+
+
+    /*content length*/
+    message+=path_len; /*first L*/
+    if( (temp = strndup(message, 9)) == NULL) return -3;
+    int content_len;
+    if( isInteger(temp, &content_len) != 0 || content_len < 0){
+        free(temp);
+        return -2;
+    }
+    free(temp);
+    /*content*/
+    message+=9; /*first content char*/
+    if(content_len != 0){
+        if( (request->content = strndup(message, content_len)) == NULL) 
+            return -3;
+    }else
+        request->content = NULL;
+
     return 1;
+}
+
+/* we make a NULL msg_t value on an existinf msg_t */
+msg_t getNullMessage(msg_t *msg){
+    msg->content = NULL;
+    msg->len = 0;
+    return *msg;
+}
+
+/**
+ * Perform an action and return a response
+ * @param req: the request we get the action from
+ * @return: a message representing the response for the client side
+ */ 
+msg_t performActionAndGetResponse(request_t req){
+    msg_t msg; 
+    getNullMessage(&msg);
+    switch(req.action){
+        case OPEN:
+            openFile(req.client_fd, req.action_flags, req.action_related_file_path);
+            break;
+
+        case CLOSE:
+            closeFile(req.client_fd, req.action_related_file_path);
+            break;
+
+        case READ:
+            readFile(req.client_fd, req.action_related_file_path);
+            break;
+
+        case READ_N:
+            /*req.content here is the number of files the client wants to read*/
+            readNFiles(req.client_fd, req.content);
+            break;
+
+        case WRITE:
+            writeFile(req.client_fd, req.action_related_file_path, req.content);
+            break;
+
+        case APPEND:
+            appendToFile(req.client_fd, req.action_related_file_path, req.content);
+            break;
+
+        case LOCK:
+            lockFile(req.client_fd, req.action_related_file_path);
+            break;
+
+        case UNLOCK:
+            unlockFile(req.client_fd, req.action_related_file_path);
+            break;
+
+        case REMOVE:
+            removeFile(req.client_fd, req.action_related_file_path);
+            break;
+    }
+    return msg;
 }
