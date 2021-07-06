@@ -15,6 +15,7 @@ typedef struct{
     int byte_capacity; /*server byte capacity*/
     int worker_threads; /*number of workers*/
     int max_connections_buffer_size; /*connections buffer capacity*/
+    int eviction_policy; /*the eviction policy*/
     char* socket_path;
 } server_config_t;
 

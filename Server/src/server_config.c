@@ -76,6 +76,9 @@ char populateConfigStruct(char* line){
     if(strncmp(key, "file_capacity", 13) == 0){
         if(isInteger(value, &(config_struct.file_capacity))!=0)
             return EXIT_FAILURE;
+    }else if(strncmp(key, "eviction_policy", 15) == 0){
+        if(isInteger(value, &(config_struct.eviction_policy))!=0)
+            return EXIT_FAILURE;
     }else if(strncmp(key, "byte_capacity", 13) == 0){
         if(isInteger(value, &(config_struct.byte_capacity))!=0)
             return EXIT_FAILURE;
@@ -101,6 +104,7 @@ void initConfigStruct(){
     config_struct.max_connections_buffer_size = -1;
     config_struct.socket_path = NULL;
     config_struct.worker_threads = -1;
+    config_struct.eviction_policy = -1;
 }
 
 /**
@@ -112,7 +116,8 @@ void initConfigStruct(){
 int checkConfigStructValues(){
     if( config_struct.byte_capacity <= 0 || config_struct.file_capacity <= 0 || 
             config_struct.max_connections_buffer_size <= 0 ||
-            config_struct.socket_path == NULL || config_struct.worker_threads <= 0 )
+            config_struct.socket_path == NULL || config_struct.worker_threads <= 0 ||
+            config_struct.eviction_policy < 0 || config_struct.eviction_policy > 1 )
         return EXIT_FAILURE;
     return EXIT_SUCCESS;
 }

@@ -86,7 +86,8 @@ int openFile(const char* pathname, int flags){
 }
 
 /**
- * Send a close-file request to the server. Any action on the pathname file after the closeFile fails.
+ * Send a close-file request to the server. Any action on the 
+ * pathname file after the closeFile fails.
  * @param pathname: the path of the file on the server
  * @return: 0 if file is closed, -1 if we fail (errno is setted up)
  */

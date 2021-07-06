@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include<server_config.h>
 #include<general_utility.h>
 #include<connection_util.h>
@@ -11,6 +12,7 @@
 #include <sys/select.h>
 #include<sys/socket.h>
 #include <sys/un.h> /* ind AF_UNIX */
+#include <sys/syscall.h>
 #define UNIX_PATH_MAX 108 /* man 7 unix */
 
 /* get up the progress levels (we use them for clean quits) */
@@ -28,6 +30,9 @@ int main(int args, char** argv){
     /*get information from config file*/
     ec(parseConfigFile("./src/config.txt"), EXIT_FAILURE, exit(EXIT_FAILURE) );
     progress_level_up;
+
+    /*eventually delete an existing socket*/
+    remove(config_struct.socket_path);
     
     /*create the (bounded) client_fd buffer, it will be shared between master and worker threads*/
     ec(clientBuffer = shared_buffer_create(client_fd_buffer, client_fd_t, 
@@ -46,9 +51,22 @@ int main(int args, char** argv){
     ec( pipe(signalPipefd), -1, exit(EXIT_FAILURE) );
     progress_level_up;
 
+    ec( initFileSystem(config_struct.file_capacity, 
+            config_struct.byte_capacity, config_struct.eviction_policy), -1, 
+        exit(EXIT_FAILURE) 
+    );
+    progress_level_up;
+
+    /*init synchronization struct for the termination shared value (quit flag)*/
+    INIT_SHARED_STRUCT(globalQuit, char, 0, exit(EXIT_FAILURE);, 
+        free(globalQuit.value);
+        exit(EXIT_FAILURE);
+    );
+    progress_level_up;
+
     /*start signal handler thread (sig_handler_tid is the id)*/
     ec_n( pthread_create(&sig_handler_tid, NULL, signal_handler_fun, NULL), 0, exit(EXIT_FAILURE) );
-    
+
     /*start the master thread*/
     ec_n( pthread_create(&master_tid, NULL, master_fun, NULL), 0, exit(EXIT_FAILURE) );
 
@@ -56,13 +74,16 @@ int main(int args, char** argv){
     ec( spawnWorkers(config_struct.worker_threads, &workers_fun), EXIT_FAILURE, exit(EXIT_FAILURE) );
     progress_level_up;
 
-
     int i = 0;
     for(;i<config_struct.worker_threads ; ++i)
         pthread_join(worker_threads[i], NULL);
+
     /*if we are here after worker threads died prematurely, send SIGINT to the signal handler thread*/
-    if(!globalQuit)
-        pthread_kill(sig_handler_tid, SIGINT);
+    SHARED_VALUE_READ(globalQuit,
+        if( *((int*)globalQuit.value) != 0 )
+            pthread_kill(sig_handler_tid, SIGINT);
+    );
+    
     pthread_join(sig_handler_tid, NULL);
     pthread_join(master_tid, NULL);
 
@@ -75,44 +96,87 @@ int main(int args, char** argv){
  */
 void* workers_fun(void* p){
     int connStatus;
+    int clientBufferStatus;
     request_t request;
     client_fd_t clientFD;
-    while(!globalQuit){
-        /* get a client fd, if -1 is returned then we are quitting*/
-        if( (clientFD = shared_buffer_get(client_fd_buffer, client_fd_t, 
-                clientBuffer, (client_fd_t)-1)) == -1 )
+    msg_t msg;
+    while(1){
+        // check termination condition
+        SHARED_VALUE_READ(globalQuit,
+            if( *((char*)globalQuit.value) != 0 )
+                break;
+        );
+        //printf("\t Thread: %ld ha letto globalQuit \n", syscall(__NR_gettid));
+        /* get a client fd */
+        clientFD = -1; // init the fd
+        clientBufferStatus = shared_buffer_get(client_fd_buffer, client_fd_t, 
+            clientBuffer, &clientFD);
+        //printf("\t Thread: %ld ha beccato client\n", syscall(__NR_gettid));
+        if( clientBufferStatus != 0 ){
+            // a fatal error occurred. Let's stop the whole server
+            pthread_kill(sig_handler_tid, SIGINT);
             break;
-
+        }
+        if(clientFD == -1) // we are quitting
+            break;
+        //printf("\t Thread: %ld becca la richiesta\n", syscall(__NR_gettid));
         connStatus = getClientRequest(clientFD, &request);
         printf("getClientRequest returns: %d\n", connStatus);
         fflush(stdout);
         if(connStatus == 0 || connStatus == -2){
             close(clientFD);
+            free(request.action_related_file_path);
+            free(request.content);
             continue;
-        }else if(connStatus == -1) 
+        }else if(connStatus == -1){
             /*client closed connection while server was writing to it*/
+            free(request.action_related_file_path);
+            free(request.content);
             continue;
-        else if(connStatus == -3)
+        }else if(connStatus == -3){
             /*allocation error occurred, not enough memory, stop here*/
+            free(request.action_related_file_path);
+            free(request.content);
+            pthread_kill(sig_handler_tid, SIGINT);
             break;
+        }
 
         /*we got a request*/
         printf("action: %d,  action_flags: %d,  file_path: %s,  content: %s\n", 
             request.action, request.action_flags, request.action_related_file_path, request.content);
+        
+        getNullMessage(&msg); // init the message
+        if( performActionAndGetResponse(request, &msg) == -1){
+            /* fatal error occurred, stop here */
+            free(msg.content);
+            free(request.action_related_file_path);
+            free(request.content);
+            pthread_kill(sig_handler_tid, SIGINT);
+            break; 
+        }
 
-        msg_t msg = performActionAndGetResponse(request);
-        if(request.action_related_file_path!=NULL) free(request.action_related_file_path);
-        if(request.content!=NULL) free(request.content);
+        /* free request stuff */
+        free(request.action_related_file_path);
+        free(request.content);
         /*reset request allocated memory*/
         memset(&request, 0, sizeof(request));
 
-        if( msg.content == NULL || sendTo(clientFD, msg.content, msg.len)!=1)
+        if( msg.content == NULL || sendTo(clientFD, msg.content, msg.len)!=1){
             /*no message for the client OR client closed connection while server was writing to it*/
+            free(request.action_related_file_path);
+            free(request.content);
             continue;
+        }
+        
+        // free message content
+        free(msg.content);
 
         /*get this client fd back to the master, if -1 is returned then 
-        we cry a hero here because of an internal error*/
-        ec( write(pipefd[1], &clientFD, sizeof(clientFD)), -1, break );
+        we close the server here because of an internal error*/
+        if( write(pipefd[1], &clientFD, sizeof(clientFD)) == -1 ){
+            pthread_kill(sig_handler_tid, SIGINT);
+            break;
+        }
     }
     return NULL;
 }
@@ -123,6 +187,7 @@ void* workers_fun(void* p){
  * @param p: the args passed to the thread
  */
 void * master_fun(void* p){
+    int quit_level = 0;
     /*init socket*/
     int listenfd;
     ec( listenfd = socket(AF_UNIX, SOCK_STREAM, 0), -1, return NULL );
@@ -157,6 +222,8 @@ void * master_fun(void* p){
     int *fds_from_pipe = calloc(100, sizeof(int));
     master_progress_level_up;
 
+    int connfd;
+
     while(quit_level != HARD_QUIT) {
         if(quit_level == SOFT_QUIT && currentClientConnections == 0)
             break;
@@ -168,11 +235,11 @@ void * master_fun(void* p){
     	/* what fd did we get a request from?*/
     	for(int fd=0; fd <= fdmax; fd++) {
     	    if (FD_ISSET(fd, &tmpset)) {
-        		long connfd;
         		if (fd == listenfd && quit_level == 0) { /* new connection */
                     ec( connfd = accept(listenfd, (struct sockaddr*)NULL ,NULL), -1, 
                         master_clean_exit(listenfd, fds_from_pipe) 
                     );
+                    puts("new conn");
                     currentClientConnections++;
                     FD_SET(connfd, &set);  /* fd added to the master set*/
                     if(connfd > fdmax) fdmax = connfd;  /* get the highest fd index*/
@@ -187,6 +254,7 @@ void * master_fun(void* p){
                     continue;
                 }else if(fd == signalPipefd[0]){
                     puts("\t master got a termination signal");
+                    read(signalPipefd[0], &quit_level, sizeof(quit_level));
                     if(quit_level == HARD_QUIT){
                         break;
                     }else continue;
@@ -197,14 +265,21 @@ void * master_fun(void* p){
                 FD_CLR(connfd, &set); 
 		        if (connfd == fdmax) fdmax = updatemax(set, fdmax);
                 /*push connfd to the client fd buffer*/
-                shared_buffer_put(client_fd_buffer, client_fd_t, clientBuffer, connfd);
+                if( shared_buffer_put(client_fd_buffer, client_fd_t, clientBuffer, connfd) != 0 ){
+                    // fatal error occurred
+                    pthread_kill(sig_handler_tid, SIGINT);
+                    break;
+                }
+                puts("ho pushato");
     	    }
     	}
     }
+
     /*signal to every waiting thread*/
-    globalQuit = 1;
-    //pthread_cond_signal(&(pipe_not_read_yet));
-    shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);
+    SHARED_VALUE_WRITE(globalQuit,
+        *((char*) globalQuit.value) = 1;
+        shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);
+    );
     free(fds_from_pipe);
     close(listenfd);
     return NULL;
@@ -216,19 +291,20 @@ void * master_fun(void* p){
  */
 void * signal_handler_fun(void* p){
     int sig;
+    int pip;
     while(1){
-        sigwait(&procCurrentMask, &sig); /* won't be woken up if a signal is sent to a specific thread*/
+        sigwait(&procCurrentMask, &sig); // won't be woken up if a signal is sent to a specific thread
         if(sig == SIGINT || sig == SIGQUIT){
             /*kill the process asap. No more accepts. Close the active connections now. 
             (Print the stats)*/
-            quit_level = HARD_QUIT;
-            ec( write(signalPipefd[1], &quit_level, sizeof(quit_level)), -1, exit(EXIT_FAILURE) );
+            pip = HARD_QUIT;
+            ec( write(signalPipefd[1], &pip, sizeof(pip)), -1, exit(EXIT_FAILURE) );
             break;
         }else if(sig == SIGHUP){
             /*kill the process. No more accepts. Wait for clients to close connections. 
             (Print the stats)*/
-            quit_level = SOFT_QUIT;
-            ec( write(signalPipefd[1], &quit_level, sizeof(quit_level)), -1, exit(EXIT_FAILURE) );
+            pip = SOFT_QUIT;
+            ec( write(signalPipefd[1], &pip, sizeof(pip)), -1, exit(EXIT_FAILURE) );
             break;
         }
     }
@@ -243,7 +319,9 @@ void quit(){
     if(progress_level>=2) shared_buffer_free(client_fd_buffer, client_fd_t, clientBuffer);
     if(progress_level>=3) { close(pipefd[0]); close(pipefd[1]); }
     if(progress_level>=4) { close(signalPipefd[0]); close(signalPipefd[1]); }
-    if(progress_level>=5) { free(worker_threads); }
-
+    if(progress_level>=5) { destroyFileSystem(); }
+    if(progress_level>=6) { destroySharedStruct(&globalQuit); }
+    if(progress_level>=7) { free(worker_threads); }
+    
     //restoreOldMask();
 }

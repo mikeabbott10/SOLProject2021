@@ -1,5 +1,15 @@
 #if !defined(_GENERAL_UTILITY_H)
 #define _GENERAL_UTILITY_H
+#include<pthread.h>
+#include<assert.h>
+#include<shared_values_util.h>
+
+#define MSG_LEN_LENGTH 9
+#define FINE_REQ_RESPONSE "OK"
+#define PENDING_REQ_RESPONSE "PR"
+#define WRONG_FILEPATH_RESPONSE "WFP"
+#define NOT_PERMITTED_ACTION_RESPONSE "NPA"
+#define REMOVED_FILE_CONTENT "RFC"
 
 /*Equality Check*/
 #define ec(s, r, c)         \
@@ -11,7 +21,49 @@
 #define SET_MAX(max,n) max = (n > max) ? n : max
 
 char isInteger(const char*, int*);
+int checkMultiplicationOverflow(int, int);
 int max(int, ...);
 char* intToStr(int, int);
+int safe_mutex_lock(pthread_mutex_t*);
+int safe_mutex_unlock(pthread_mutex_t*);
+int readn(long, void*, size_t);
+int writen(long, void*, size_t);
+int sendTo(int, char*, int);
+
+/*----------- connection_util and filesystem_util common stuff-------------------------------------*/
+#define NO_FLAGS 0x00
+#define O_CREATE 0x01
+#define O_LOCK 0x02
+#define OPEN 0x03
+#define CLOSE 0x04
+#define READ 0x05
+#define READ_N 0x06
+#define WRITE 0x07
+#define APPEND 0x08
+#define LOCK 0x09
+#define UNLOCK 0x0a
+#define REMOVE 0x0b
+
+typedef struct msg {
+    int len;
+    char *content;
+} msg_t;
+
+typedef int client_fd_t;
+
+/*node of client fds list*/
+typedef struct cl{
+    client_fd_t client_fd;
+    struct cl* next;
+} client_t;
+
+
+/*----------- clean termination stuff --------------------------------------------------------------*/
+/*termination flag*/
+#define HARD_QUIT 2
+#define SOFT_QUIT 1
+
+// termination value struct
+SharedStruct globalQuit;
 
 #endif

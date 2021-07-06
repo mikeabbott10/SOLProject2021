@@ -30,36 +30,6 @@ int main(void)
 } 
 */
 
-/**
- * Safe mutex lock
- * @param mux: the mutex to lock
- */
-static inline void safe_mutex_lock(pthread_mutex_t* mux){
-    int err;
-    if ((err = pthread_mutex_lock(mux)) != 0) {
-        errno = err;
-        perror("lock");
-        pthread_exit(NULL);
-    }/* else {
-        //printf("locked\n");
-    }*/
-}
-
-/**
- * Unsafe mutex lock
- * @param mux: the mutex to unlock
- */
-static inline void safe_mutex_unlock(pthread_mutex_t* mux){
-    int err;
-    if ((err = pthread_mutex_unlock(mux)) != 0) {
-        errno = err;
-        perror("unlock");
-        pthread_exit(NULL);
-    }/* else {
-        //printf("unlocked\n");
-    }*/
-}
-
 #define declare_shared_buffer_use(T, BT)                               \
     typedef struct {                                                   \
         T* buffer;                                                     \
@@ -93,7 +63,6 @@ static inline void safe_mutex_unlock(pthread_mutex_t* mux){
         }                                                              \
         return b;                                                      \
     }                                                                  \
-                                                                       \
     void shared_buffer_free_##BT(BT* b)                                \
     {                                                                  \
         free(b->buffer);                                               \
@@ -103,48 +72,73 @@ static inline void safe_mutex_unlock(pthread_mutex_t* mux){
         free(b);                                                       \
     }                                                                  \
                                                                        \
-    void shared_buffer_put_##BT(BT* b, T x)                            \
+    int shared_buffer_put_##BT(BT* b, T x)                             \
     {                                                                  \
-        safe_mutex_lock(&(b->mux));                                    \
-        while (b->start == (b->end + b->capacity + 1) % b->capacity && \
-                !globalQuit) {                                         \
+        if( safe_mutex_lock(&(b->mux)) != 0 )                          \
+            return -1;                                                  \
+        while (b->start == (b->end + b->capacity + 1) % b->capacity){   \
+            SHARED_VALUE_READ(globalQuit,                               \
+                if( *((char*)globalQuit.value) != 0 )                   \
+                    break;                                              \
+            );                                                          \
             pthread_cond_wait(&(b->not_anymore_full), &(b->mux));      \
         }                                                              \
-        if(globalQuit) {                                               \
-            safe_mutex_unlock(&(b->mux));                              \
-            return;                                                    \
-        }                                                              \
+        SHARED_VALUE_READ(globalQuit,                                   \
+            if( *((char*)globalQuit.value) == 1 ){                       \
+                if( safe_mutex_unlock(&(b->mux)) != 0 )                 \
+                    return -1;                                          \
+                return 0;                                               \
+            }                                                           \
+        );                                                              \
         b->buffer[b->end] = x;                                         \
         ++(b->end);                                                    \
         b->end %= b->capacity;                                         \
-        pthread_cond_signal(&(b->not_anymore_empty));                  \
-        safe_mutex_unlock(&(b->mux));                                  \
+        if( pthread_cond_signal(&(b->not_anymore_empty)) != 0 )        \
+            return -1;                                                  \
+        if( safe_mutex_unlock(&(b->mux)) != 0 )                        \
+            return -1;                                                  \
+        printf("b->end:%ld\n", b->end);\
+        return 0;                                                      \
     }                                                                  \
                                                                        \
-    T shared_buffer_get_##BT(BT* b, T nullValue)                       \
+    int shared_buffer_get_##BT(BT* b, T* result)                       \
     {                                                                  \
-        T result;                                                      \
-        safe_mutex_lock(&(b->mux));                                    \
-        while (b->start == b->end && !globalQuit) {                    \
+        if( safe_mutex_lock(&(b->mux)) != 0 )                          \
+            return -1;                                                  \
+        while (b->start == b->end) {                                    \
+            SHARED_VALUE_READ(globalQuit,                               \
+                if( *((char*)globalQuit.value) != 0 )                   \
+                    break;                                              \
+            );                                                          \
             pthread_cond_wait(&(b->not_anymore_empty), &(b->mux));     \
         }                                                              \
-        if(globalQuit) {                                               \
-            safe_mutex_unlock(&(b->mux));                              \
-            return nullValue;                                          \
-        }                                                              \
-        result = b->buffer[b->start];                                  \
+        SHARED_VALUE_READ(globalQuit,                                   \
+            if( *((char*)globalQuit.value) == 1 ){                       \
+                if( safe_mutex_unlock(&(b->mux)) != 0 )                 \
+                    return -1;                                          \
+                return 0;                                               \
+            }                                                           \
+        );                                                              \
+        *result = b->buffer[b->start];                                 \
         ++(b->start);                                                  \
         b->start %= b->capacity;                                       \
-        pthread_cond_signal(&(b->not_anymore_full));                   \
-        safe_mutex_unlock(&(b->mux));                                  \
-                                                                       \
-        return result;                                                 \
+        if( pthread_cond_signal(&(b->not_anymore_full)) != 0 )         \
+            return -1;                                                  \
+        if( safe_mutex_unlock(&(b->mux)) != 0 )                        \
+            return -1;                                                  \
+        return 0;                                                      \
     }                                                                  \
                                                                        \
-    void shared_buffer_artificial_signal_##BT(BT* b)                   \
+    int shared_buffer_artificial_signal_##BT(BT* b)                    \
     {                                                                  \
-        pthread_cond_broadcast(&(b->not_anymore_full));                \
-        pthread_cond_broadcast(&(b->not_anymore_empty));               \
+        if( safe_mutex_lock(&(b->mux)) != 0 )                          \
+            return -1;                                                  \
+        if( pthread_cond_broadcast(&(b->not_anymore_full)) != 0 ||     \
+                pthread_cond_broadcast(&(b->not_anymore_empty)) != 0 ) \
+            return -1;                                                  \
+        if( safe_mutex_unlock(&(b->mux)) != 0 )                        \
+            return -1;                                                  \
+        return 0;                                                      \
     }                                                                  \
 
 
@@ -154,10 +148,12 @@ static inline void safe_mutex_unlock(pthread_mutex_t* mux){
  * @param BT: the declared buffer type
  * @param T: the type of the items in the buffer
  * @param b: the buffer we want to get the item from
- * @param n: a NULL value for the type T
- * @return the item popped out from the buffer
+ * @param r: pointer to the memory where we are going to save the gotten item
+ * @return 
+ *      -1 if an error occurred
+ *      0 otherwise
  */
-#define shared_buffer_get(BT, T, b, n) shared_buffer_get_##BT(b, n)
+#define shared_buffer_get(BT, T, b, r) shared_buffer_get_##BT(b, r)
 
 /**
  * Initialize the buffer
@@ -176,6 +172,9 @@ static inline void safe_mutex_unlock(pthread_mutex_t* mux){
  * @param T: the type of the items in the buffer
  * @param b: the buffer we want to put the item in
  * @param x: the item
+ * @return
+ *      -1 if an error occurred
+ *      0 otherwise
  */
 #define shared_buffer_put(BT, T, b, x) shared_buffer_put_##BT(b, x)
 
@@ -192,6 +191,9 @@ static inline void safe_mutex_unlock(pthread_mutex_t* mux){
  * @param BT: the declared buffer type
  * @param T: the type of the items in the buffer
  * @param b: the buffer instance
+ * @return
+ *      -1 if an error occurred
+ *      0 otherwise
  */
 #define shared_buffer_artificial_signal(BT, T, b) shared_buffer_artificial_signal_##BT(b)
 
