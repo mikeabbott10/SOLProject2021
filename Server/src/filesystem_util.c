@@ -38,9 +38,9 @@ int buildNewFile(file_t** filePtr, char* path){
     (*filePtr)->locked_by = NULL;
     (*filePtr)->opened_by = NULL;
     (*filePtr)->writeOwner = -1;
-    (*filePtr)->readerCount = 0;
-    (*filePtr)->writerCount = 0;
-    pthread_cond_init(&((*filePtr)->cv), NULL);
+    (*filePtr)->readersCount = 0;
+    (*filePtr)->writersCount = 0;
+    pthread_cond_init(&((*filePtr)->Go), NULL);
     pthread_mutex_init(&((*filePtr)->mux), NULL);
     pthread_mutex_init(&((*filePtr)->order), NULL);
     (*filePtr)->prev = NULL;
@@ -77,7 +77,7 @@ char* destroyFile(file_t* file, char warn_lockers){
     free(file->path);
     pthread_mutex_destroy(&(file->mux));
     pthread_mutex_destroy(&(file->order));
-    pthread_cond_destroy(&(file->cv));
+    pthread_cond_destroy(&(file->Go));
     char* content = file->content;
     free(file);
     return content;
@@ -131,12 +131,13 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
         if( !(flags & O_CREATE) ){
             // O_CREATE is not part of the flags
             ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
+            errno = ENOENT;
             return 1;
         }
         
+        // O_CREATE has been specified
         ec( file = malloc(sizeof(file_t)), NULL, return -1 );
 
-        // O_CREATE has been specified
         if( buildNewFile(&file, file_path) == -1 ){
             ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
             return -1;
@@ -146,13 +147,13 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
         int fileInsertion = insertFile(file, PERFORM_EVICTION, client_fd);
         if( fileInsertion == -1 ){
             // fatal error
-            free( destroyFile(file, 0));
+            free( destroyFile(file, 0) );
             ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
             return -1;
         }
 
         // the new file has been successfully inserted
-        ec( SAFE_LOCK(file->mux), 1, return -1 );
+        START_WRITE(file, fs, 1, return -1);
 
         if( flags & O_LOCK ){
             // O_LOCK has been specified
@@ -162,12 +163,16 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             // this client is the one who can write on this new file
             file->writeOwner = client_fd;
         }
+
     }else{
         if( flags & O_CREATE ){
             // O_CREATE has been specified
             ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
             return 1;
         }
+
+        // the new file exists
+        START_WRITE(file, fs, 1, return -1);
 
         if( flags & O_LOCK ){
             // let's make it locked by client_fd
@@ -178,7 +183,8 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
     // let's make the new file opened by client_fd
     clientListTailInsertion(&(file->opened_by), client_fd);
 
-    ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
+    DONE_WRITE(file, fs, , return -1);
+
     // build response
     ec( msgPtr->content = strdup(FINE_REQ_RESPONSE), NULL, return -1 );
     msgPtr->len = strlen(FINE_REQ_RESPONSE); 

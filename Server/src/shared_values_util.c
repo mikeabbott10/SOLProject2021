@@ -33,7 +33,7 @@ void destroySharedStruct(SharedStruct* s){
 }
 
 /*----------- Not fair for readers solution ---------------------------------------------------------*/
-//#pragma region
+#pragma region
 
 void startRead_not_readers_fair(SharedStruct* s){
     pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
@@ -78,10 +78,10 @@ void doneWrite_not_readers_fair(SharedStruct* s){
         pthread_cond_broadcast(&(s->readGo));
     pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
 }
-//#pragma endregion
+#pragma endregion
 
 /*----------- Not fair for writers solution ---------------------------------------------------------*/
-//#pragma region
+#pragma region
 
 void startRead_not_writers_fair(SharedStruct* s){
     pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
@@ -126,10 +126,10 @@ void doneWrite_not_writers_fair(SharedStruct* s){
         pthread_cond_signal(&(s->writeGo));
     pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
 }
-//#pragma endregion
+#pragma endregion
 
 /*----------- Fair solution, FIFO access policy -----------------------------------------------------*/
-/*#pragma region
+#pragma region
 
 // --------- FIFO UTIL
 typedef struct node{
@@ -190,7 +190,7 @@ void startRead_fair_fifo(SharedStruct *s){
         pthread_cond_destroy(&self);
     }
     s->activeReaders++;
-    printf("\t Thread: %ld uscito dalla coda\n", syscall(__NR_gettid));
+    //printf("\t Thread: %ld uscito dalla coda\n", syscall(__NR_gettid));
     pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
 }
 
@@ -207,7 +207,6 @@ void startWrite_fair_fifo(SharedStruct *s){
     pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
     //printf("\t Thread: %ld in coda\n", syscall(__NR_gettid));
     if(s->activeReaders > 0 || s->activeWriters > 0){
-        //pthread_cond_t self = PTHREAD_COND_INITIALIZER;
         pthread_cond_t self;
         pthread_cond_init(&self, NULL);
         appendTail(&waiting, &self);
@@ -230,4 +229,4 @@ void doneWrite_fair_fifo(SharedStruct *s){
     pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
 }
 
-#pragma endregion*/
+#pragma endregion

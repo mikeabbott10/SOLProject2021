@@ -30,9 +30,7 @@ char spawnWorkers(int n, workerFun F){
  * @param listen_fd: the file descriptor to close
  */
 void master_clean_exit(int listen_fd, int* int_arr){
-    SHARED_VALUE_WRITE(globalQuit,
-        *((char*) globalQuit.value) = 1;
-    );
+    globalQuit = 1;
     if(master_progress>=1) close(listen_fd);
     if(master_progress>=2) free(int_arr);
     shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);

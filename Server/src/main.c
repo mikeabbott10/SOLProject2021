@@ -57,13 +57,6 @@ int main(int args, char** argv){
     );
     progress_level_up;
 
-    /*init synchronization struct for the termination shared value (quit flag)*/
-    INIT_SHARED_STRUCT(globalQuit, char, 0, exit(EXIT_FAILURE);, 
-        free(globalQuit.value);
-        exit(EXIT_FAILURE);
-    );
-    progress_level_up;
-
     /*start signal handler thread (sig_handler_tid is the id)*/
     ec_n( pthread_create(&sig_handler_tid, NULL, signal_handler_fun, NULL), 0, exit(EXIT_FAILURE) );
 
@@ -74,18 +67,15 @@ int main(int args, char** argv){
     ec( spawnWorkers(config_struct.worker_threads, &workers_fun), EXIT_FAILURE, exit(EXIT_FAILURE) );
     progress_level_up;
 
+    pthread_join(sig_handler_tid, NULL);
+    pthread_join(master_tid, NULL);
+
+    // wake up every waiting worker
+    shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);
+    
     int i = 0;
     for(;i<config_struct.worker_threads ; ++i)
         pthread_join(worker_threads[i], NULL);
-
-    /*if we are here after worker threads died prematurely, send SIGINT to the signal handler thread*/
-    SHARED_VALUE_READ(globalQuit,
-        if( *((int*)globalQuit.value) != 0 )
-            pthread_kill(sig_handler_tid, SIGINT);
-    );
-    
-    pthread_join(sig_handler_tid, NULL);
-    pthread_join(master_tid, NULL);
 
     return EXIT_SUCCESS;
 }
@@ -100,18 +90,12 @@ void* workers_fun(void* p){
     request_t request;
     client_fd_t clientFD;
     msg_t msg;
-    while(1){
-        // check termination condition
-        SHARED_VALUE_READ(globalQuit,
-            if( *((char*)globalQuit.value) != 0 )
-                break;
-        );
-        //printf("\t Thread: %ld ha letto globalQuit \n", syscall(__NR_gettid));
+    while(!globalQuit){        
         /* get a client fd */
         clientFD = -1; // init the fd
         clientBufferStatus = shared_buffer_get(client_fd_buffer, client_fd_t, 
             clientBuffer, &clientFD);
-        //printf("\t Thread: %ld ha beccato client\n", syscall(__NR_gettid));
+            
         if( clientBufferStatus != 0 ){
             // a fatal error occurred. Let's stop the whole server
             pthread_kill(sig_handler_tid, SIGINT);
@@ -119,7 +103,7 @@ void* workers_fun(void* p){
         }
         if(clientFD == -1) // we are quitting
             break;
-        //printf("\t Thread: %ld becca la richiesta\n", syscall(__NR_gettid));
+        
         connStatus = getClientRequest(clientFD, &request);
         printf("getClientRequest returns: %d\n", connStatus);
         fflush(stdout);
@@ -270,16 +254,10 @@ void * master_fun(void* p){
                     pthread_kill(sig_handler_tid, SIGINT);
                     break;
                 }
-                puts("ho pushato");
     	    }
     	}
     }
-
-    /*signal to every waiting thread*/
-    SHARED_VALUE_WRITE(globalQuit,
-        *((char*) globalQuit.value) = 1;
-        shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);
-    );
+    globalQuit = 1;
     free(fds_from_pipe);
     close(listenfd);
     return NULL;
@@ -320,8 +298,7 @@ void quit(){
     if(progress_level>=3) { close(pipefd[0]); close(pipefd[1]); }
     if(progress_level>=4) { close(signalPipefd[0]); close(signalPipefd[1]); }
     if(progress_level>=5) { destroyFileSystem(); }
-    if(progress_level>=6) { destroySharedStruct(&globalQuit); }
-    if(progress_level>=7) { free(worker_threads); }
+    if(progress_level>=6) { free(worker_threads); }
     
     //restoreOldMask();
 }

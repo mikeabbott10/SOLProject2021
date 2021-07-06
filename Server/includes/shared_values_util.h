@@ -2,6 +2,26 @@
 #define _SHARED_VALUES_UTIL_H
 #include <pthread.h>
 
+/* USAGE:
+//init synchronization struct for the termination shared value (quit flag)
+INIT_SHARED_STRUCT(sharedStruct, char, 0, exit(EXIT_FAILURE);, 
+    free(sharedStruct.value);
+    exit(EXIT_FAILURE);
+);
+
+// read shared value
+SHARED_VALUE_READ(sharedStruct,
+    if( *((char*) sharedStruct.value ) != 0 )
+        break; // do stuff
+);
+
+// write shared value
+SHARED_VALUE_WRITE(sharedStruct,
+    *((char*) sharedStruct.value) = 1;
+    // do stuff
+);
+
+*/
 #define INIT_SHARED_STRUCT(s, type, initVal, onMemError, onConcError)   \
     s.value = malloc(sizeof(type));                                    \
     if(s.value == NULL){                                                \

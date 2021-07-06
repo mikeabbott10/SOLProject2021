@@ -58,12 +58,13 @@ typedef struct cl{
 } client_t;
 
 
-/*----------- clean termination stuff --------------------------------------------------------------*/
+/*----------- termination stuff --------------------------------------------------------------------*/
 /*termination flag*/
 #define HARD_QUIT 2
 #define SOFT_QUIT 1
 
-// termination value struct
-SharedStruct globalQuit;
+// global termination value (no need to sync the access bc we only have 
+// just 1 writer who writes just once)
+char globalQuit;
 
 #endif

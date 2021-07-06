@@ -1,6 +1,7 @@
 #if !defined(_FILESYSTEM_UTIL_H)
 #define _FILESYSTEM_UTIL_H
 #define _POSIX_C_SOURCE 200809L
+#include<errno.h>
 #include <pthread.h>
 #include <icl_hash.h>
 #include<general_utility.h>
@@ -16,6 +17,41 @@
 #define NO_EVICTION 0
 #define PERFORM_EVICTION 1
 
+#define START_WRITE(filePtr, fs, unlockStore, errorProc)            \
+    ec( SAFE_LOCK(filePtr->order), 1, errorProc );                  \
+    ec( SAFE_LOCK(filePtr->mux), 1, errorProc );                    \
+    if(unlockStore) ec( SAFE_UNLOCK(fs.mux), 1, errorProc );        \
+    while(filePtr->writersCount > 0 || filePtr->readersCount > 0)   \
+        CV_WAIT(filePtr->Go, filePtr->mux);                         \
+    filePtr->writersCount++;                                        \
+    ec( SAFE_UNLOCK(filePtr->order), 1, errorProc );                \
+    ec( SAFE_UNLOCK(filePtr->mux), 1, errorProc );                  \
+
+#define DONE_WRITE(filePtr, fs, c, errorProc)                       \
+    ec( SAFE_LOCK(filePtr->mux), 1, errorProc );                    \
+    c                                                               \
+    filePtr->writersCount--;                                        \
+    ec_n( CV_SIGNAL(filePtr->Go), 0, errorProc );                   \
+    ec( SAFE_UNLOCK(filePtr->mux), 1, errorProc );                  \
+
+#define START_READ(filePtr, fs, unlockStore, errorProc)             \
+    ec( SAFE_LOCK(filePtr->order), 1, errorProc );                  \
+    ec( SAFE_LOCK(filePtr->mux), 1, errorProc );                    \
+    if(unlockStore) ec( SAFE_UNLOCK(fs.mux), 1, errorProc );        \
+    while(filePtr->writersCount > 0)                                \
+        CV_WAIT(filePtr->Go, filePtr->mux);                         \
+    filePtr->readersCount++;                                        \
+    ec( SAFE_UNLOCK(filePtr->order), 1, errorProc );                \
+    ec( SAFE_UNLOCK(filePtr->mux), 1, errorProc );                  \
+
+#define DONE_READ(filePtr, fs, c, errorProc)                        \
+    ec( SAFE_LOCK(filePtr->mux), 1, errorProc );                    \
+    c                                                               \
+    filePtr->readersCount--;                                        \
+    if( filePtr->readersCount == 0 )                                \
+        ec_n( CV_SIGNAL(filePtr->Go), 0, errorProc );               \
+    ec( SAFE_UNLOCK(filePtr->mux), 1, errorProc );                  \
+
 /*file abstraction*/
 typedef struct file{
     char* path; /*the path of the file*/
@@ -27,11 +63,11 @@ typedef struct file{
     client_t* opened_by; /* the list of clients who opened the file*/
     client_fd_t writeOwner; /* the client who has just called openFile(path, O_LOCK|O_CREATE) */
 
-    int readerCount;
-    int writerCount;
+    int readersCount;
+    int writersCount;
     pthread_mutex_t mux;
     pthread_mutex_t order;
-    pthread_cond_t cv;
+    pthread_cond_t Go;
 
     struct file* prev;
     struct file* next;
