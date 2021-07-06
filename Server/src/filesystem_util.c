@@ -49,18 +49,17 @@ int buildNewFile(file_t** filePtr, char* path){
 }
 
 /**
- * Free the whole list of client_t list
+ * Free the whole list of client_t, list
  * @param list: the list to free
- * @param file: the file related to the list
  * @param warnClients: flag: warn the clients about the distruction of the file
  */
-void freeClientsList(client_t* list, char* filePath, char warnClients){
+void freeClientsList(client_t* list, char warnClients){
     client_t* nextNode;
     while(list != NULL){
         nextNode = list->next;
         if(warnClients && list->client_fd > 0)
             // Send a message to the client clientFd, warning him the file was removed
-            sendTo(list->client_fd, filePath, strlen(filePath));
+            sendTo(list->client_fd, LOCKED_FILE_REMOVED, strlen(LOCKED_FILE_REMOVED));
         free(list);
         list = nextNode;
     }
@@ -72,8 +71,8 @@ void freeClientsList(client_t* list, char* filePath, char warnClients){
  * @return the file content
  */
 char* destroyFile(file_t* file, char warn_lockers){
-    freeClientsList(file->locked_by, file->path, warn_lockers);
-    freeClientsList(file->opened_by, NULL, 0);
+    freeClientsList(file->locked_by, warn_lockers);
+    freeClientsList(file->opened_by, 0);
     free(file->path);
     pthread_mutex_destroy(&(file->mux));
     pthread_mutex_destroy(&(file->order));
@@ -309,33 +308,30 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
     if(newSize > fs.byte_capacity || newFilesNum > fs.file_capacity)
         eviction_needed = 1;
 
-    if(fs.currFilesNumber == 0 /* && (fs.currSize==0) */){
-        /* storage is empty */
-        /* allowed to insert the file here */
-        fs.fileListHead = filePtr;
-        fs.fileListTail = fs.fileListHead;
-    }else{
+    if( fs.currFilesNumber != 0 ){
         /* storage is not empty */
         if( eviction_needed ){
             if(performEviction){
-                file_t** evictionVictims = NULL; // list of pointers to the victims
-                unsigned int evVictimsArrayLength = 0;
-                evictionVictims = getEvictionVictimsList(newSize - fs.byte_capacity, 
-                                                            newFilesNum - fs.file_capacity,
-                                                            &evVictimsArrayLength);
-                if( evictFiles(evictionVictims, evVictimsArrayLength, client_fd) == -1 ){
+                if( evictFiles(newSize - fs.byte_capacity, newFilesNum - fs.file_capacity, 
+                        client_fd) == -1 ){
                     // fatal error occurred while evicting files
                     // TODO: free stuff
                     return -1;
                 }
-                free(evictionVictims);
             }else{
                 //got a serious problem here
                 return -1;
             }
         }
+    }
+    if( fs.currFilesNumber == 0 ){
+        /* storage is empty */
+        /* allowed to insert the file here */
+        fs.fileListHead = filePtr;
+        fs.fileListTail = fs.fileListHead;
+    }else{
+        fs.fileListTail = filePtr;
         filePtr->prev = fs.fileListTail;
-        fs.fileListTail->next = filePtr;
     }
 
     /* we inserted the file here, let's put it in the hash table and update the size values */
@@ -353,46 +349,34 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
 }
 
 /**
- * Push the file x in the evictionVictims array
- * @param evictionVictims: the address of the file_t pointers array
- * @param length: the pointer to the length variable (length of the array)
- * @param p: the pointer we want to push
- * @return 
- *      -1 if fatal error occurred
- *      0 if everything's ok
- */
-int pushFilePointerInArray(file_t*** evictionVictims, unsigned int* length, file_t* p){
-    if( checkMultiplicationOverflow(((*length)+1), sizeof(file_t*)) == -1 )
-        return -1;
-    int newSize = ((*length)+1) * sizeof(file_t*);
-    ec( *evictionVictims = realloc( *evictionVictims, newSize ), NULL, return -1 );
-    (*evictionVictims)[*length] = p;
-    (*length)++;
-    return 0;
-}
-
-/**
  * Build a list of files which are the next victims of the eviction policy
  * @param bytesNum: the number of bytes we need to free
  * @param filesNum: the number of files we need to evict
  * @return 
- *      the list of the pointers to the victims
+ *      -1 if fatal error occurred
+ *      0 otherwise
  */
-file_t** getEvictionVictimsList(int bytesNum, int filesNum, unsigned int * length){
-    file_t** evictionVictims = NULL;
-    *length = 0;
+int evictFiles(int bytesNum, int filesNum, client_fd_t clientFd){
     file_t* currFile = fs.fileListHead;
+    file_t* nextFile;
     while(currFile != NULL){
+        nextFile = currFile->next;
         if( filesNum > 0 || bytesNum > 0){
             // we need to evict someone
             if( fs.eviction_policy == FIFO || fs.eviction_policy == LRU ){
                 // we evict the less recently inserted files (from fs.fileListHead ahead)
-                pushFilePointerInArray(&evictionVictims, length, currFile);
+                START_WRITE(currFile, fs, 0, return -1);
+                filesNum--;
+                bytesNum -= currFile->size;
+                if( deleteFile(currFile, clientFd, 1) == -1 )
+                    return -1;
             }
         }
-        currFile = currFile->next;
+        currFile = nextFile;
     }
-    return evictionVictims;
+
+    //assert(filesNum > 0 || bytesNum > 0 );
+    return 0;
 }
 
 /**
@@ -406,6 +390,7 @@ file_t** getEvictionVictimsList(int bytesNum, int filesNum, unsigned int * lengt
 int sendContentToClient(client_fd_t clientFd, char* content){
     if(content == NULL)
         return 0;
+    printf("content:%s", content);
     char* str;
     int newLen = strlen(REMOVED_FILE_CONTENT)+ strlen(content);
     ec( str = calloc(newLen + 1, sizeof(char)), 
@@ -417,33 +402,35 @@ int sendContentToClient(client_fd_t clientFd, char* content){
 }
 
 /**
- * Evict files
- * @param files: the list of pointers to the files in the storage
+ * Delete a file
+ * @param file: the pointer to the file
+ * @param clientFd: the client who triggered the deletion
+ * @param sendContentBackToClient: says if we want to send the content back to clientFd
  * @return
  *      -1 if fatal error
- *      0 if everything's ok
+ *      0 otherwise
  */
-int evictFiles(file_t** files, unsigned int length, client_fd_t client_fd){
-    if( files == NULL)
+int deleteFile(file_t* file, client_fd_t clientFd, char sendContentBackToClient){
+    if( file == NULL)
         return 0;
     char* tempContent = NULL;
-    int i = 0;
-    for(; i<length; ++i){
-        if( files[i]->prev == NULL ){
-            // this is the head of the list
-            fs.fileListHead = files[i]->next;
-            if( fs.fileListHead != NULL)
-                (fs.fileListHead)->prev = NULL;
-        }else{
-            (files[i]->prev)->next = files[i]->next;
-            (files[i]->next)->prev = files[i]->prev;
-        }
-        tempContent = destroyFile(files[i], 1);
-        if( sendContentToClient(client_fd, tempContent) == -1 ){
+    if( file->prev == NULL ){
+        // this is the head of the list
+        fs.fileListHead = file->next;
+        if( fs.fileListHead != NULL)
+            (fs.fileListHead)->prev = NULL;
+    }else{
+        (file->prev)->next = file->next;
+        (file->next)->prev = file->prev;
+    }
+    icl_hash_delete(fs.hFileTable, file->path, NULL, NULL);
+    tempContent = destroyFile(file, 1);
+    if( sendContentBackToClient ){
+        if( sendContentToClient(clientFd, tempContent) == -1 ){
             free(tempContent);
             return -1;
         }
-        free(tempContent);
     }
+    free(tempContent);
     return 0;
 }

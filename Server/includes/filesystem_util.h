@@ -111,7 +111,7 @@ int removeFile(msg_t*, client_fd_t, char*);
 int initFileSystem(size_t, size_t, char);
 void destroyFileSystem();
 int insertFile(file_t*, char, client_fd_t);
-file_t** getEvictionVictimsList(int, int, unsigned int*);
-int evictFiles(file_t**, unsigned int, client_fd_t);
+int evictFiles(int, int, client_fd_t);
+int deleteFile(file_t*, client_fd_t, char);
 
 #endif

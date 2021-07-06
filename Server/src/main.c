@@ -72,7 +72,7 @@ int main(int args, char** argv){
 
     // wake up every waiting worker
     shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);
-    
+
     int i = 0;
     for(;i<config_struct.worker_threads ; ++i)
         pthread_join(worker_threads[i], NULL);
@@ -113,9 +113,7 @@ void* workers_fun(void* p){
             free(request.content);
             continue;
         }else if(connStatus == -1){
-            /*client closed connection while server was writing to it*/
-            free(request.action_related_file_path);
-            free(request.content);
+            /*client closed connection while server was waiting for its request*/
             continue;
         }else if(connStatus == -3){
             /*allocation error occurred, not enough memory, stop here*/
