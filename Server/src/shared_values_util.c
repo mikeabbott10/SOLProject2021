@@ -164,7 +164,8 @@ void *popHead(Node **lPtr){
     *lPtr = (*lPtr)->next;
     void* item = malloc(sizeof(void*));
     if(item == NULL) return NULL;
-    memcpy(item, nodo->item, sizeof(nodo->item));
+    item = nodo->next;
+    //memcpy(item, nodo->item, sizeof(nodo->item));
     free(nodo);
     return item;
 }

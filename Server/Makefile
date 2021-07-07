@@ -14,7 +14,7 @@ INCLUDES	= -I $(INCDIR)
 # librerie da linkare a tutti i files (es. -lm per le librerie matematiche)
 LDFLAGS 	= -pthread -lm
 # altre librerie  (es. -L<path> -lmylib)
-LIBS1		= -L "./mylibs" -lgeneral_utility -lserver_config -lfilesystem_util -lconnection_util
+LIBS1		= -L "./mylibs" -lgeneral_utility -lserver_config -lfilesystem_util -lconnection_util -lshared_values_util
 # flags di ottimizzazione 
 OPTFLAGS	= -O3
 # flags di debugging
@@ -48,7 +48,7 @@ bin/server: src/main.c mylibs/libgeneral_utility.so mylibs/libserver_config.so m
 
 #valgrind --log-file="gino${a}.txt" --leak-check=full --show-leak-kinds=all --track-origins=yes
 
-mylibs/libconnection_util.so: objs/connection_util.o $(INCDIR)/connection_util.h mylibs/libgeneral_utility.so mylibs/libfilesystem_util.so
+mylibs/libconnection_util.so: objs/connection_util.o $(INCDIR)/connection_util.h mylibs/libgeneral_utility.so mylibs/libfilesystem_util.so mylibs/libshared_values_util.so
 	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility -lfilesystem_util
 
 mylibs/libfilesystem_util.so: objs/filesystem_util.o $(INCDIR)/filesystem_util.h mylibs/libgeneral_utility.so mylibs/libicl_hash.so
@@ -58,6 +58,9 @@ mylibs/libserver_config.so: objs/server_config.o $(INCDIR)/server_config.h mylib
 	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility
 
 mylibs/libgeneral_utility.so: objs/general_utility.o $(INCDIR)/general_utility.h
+	$(CC) -shared -o $@ $< $(LDFLAGS)
+
+mylibs/libshared_values_util.so: objs/shared_values_util.o $(INCDIR)/shared_values_util.h
 	$(CC) -shared -o $@ $< $(LDFLAGS)
 
 mylibs/libicl_hash.so: objs/icl_hash.o $(INCDIR)/icl_hash.h

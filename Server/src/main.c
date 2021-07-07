@@ -57,6 +57,13 @@ int main(int args, char** argv){
     );
     progress_level_up;
 
+    //init synchronization struct for the shared value
+    INIT_SHARED_STRUCT(currentClientConnections, int, 0, exit(EXIT_FAILURE);, 
+        free(currentClientConnections.value);
+        exit(EXIT_FAILURE);
+    );
+    progress_level_up;
+
     /*start signal handler thread (sig_handler_tid is the id)*/
     ec_n( pthread_create(&sig_handler_tid, NULL, signal_handler_fun, NULL), 0, exit(EXIT_FAILURE) );
 
@@ -111,9 +118,17 @@ void* workers_fun(void* p){
         fflush(stdout);
         if(connStatus == 0 || connStatus == -2){
             close(clientFD);
+            // write shared value
+            SHARED_VALUE_WRITE(currentClientConnections,
+                (*((int*) currentClientConnections.value))--;
+            );
             continue;
         }else if(connStatus == -1){
             /*client closed connection while server was waiting for its request*/
+            // write shared value
+            SHARED_VALUE_WRITE(currentClientConnections,
+                (*((int*) currentClientConnections.value))--;
+            );
             continue;
         }else if(connStatus == -3){
             /*allocation error occurred, not enough memory, stop here*/
@@ -147,6 +162,7 @@ void* workers_fun(void* p){
             /*no message for the client OR client closed connection while server was writing to it*/
             free(request.action_related_file_path);
             free(request.content);
+            // get this client fd back to the master
             if( write(pipefd[1], &clientFD, sizeof(clientFD)) == -1 ){
                 pthread_kill(sig_handler_tid, SIGINT);
                 break;
@@ -157,8 +173,7 @@ void* workers_fun(void* p){
         // free message content
         free(msg.content);
 
-        /*get this client fd back to the master, if -1 is returned then 
-        we close the server here because of an internal error*/
+        //get this client fd back to the master
         if( write(pipefd[1], &clientFD, sizeof(clientFD)) == -1 ){
             pthread_kill(sig_handler_tid, SIGINT);
             break;
@@ -211,9 +226,11 @@ void * master_fun(void* p){
     int connfd;
 
     while(quit_level != HARD_QUIT) {
-        if(quit_level == SOFT_QUIT && currentClientConnections == 0)
-            break;
-
+        // read shared value
+        SHARED_VALUE_READ(currentClientConnections,
+            if(quit_level == SOFT_QUIT && *((int*) currentClientConnections.value ) == 0)
+                break;
+        );
     	tmpset = set;
         ec( select(fdmax+1, &tmpset, NULL, NULL, NULL), -1, 
             master_clean_exit(listenfd, fds_from_pipe) 
@@ -226,7 +243,12 @@ void * master_fun(void* p){
                         master_clean_exit(listenfd, fds_from_pipe) 
                     );
                     puts("new conn");
-                    currentClientConnections++;
+
+                    // write shared value
+                    SHARED_VALUE_WRITE(currentClientConnections,
+                        (*((int*) currentClientConnections.value))++;
+                    );
+
                     FD_SET(connfd, &set);  /* fd added to the master set*/
                     if(connfd > fdmax) fdmax = connfd;  /* get the highest fd index*/
                     continue;
@@ -301,7 +323,8 @@ void quit(){
     if(progress_level>=3) { close(pipefd[0]); close(pipefd[1]); }
     if(progress_level>=4) { close(signalPipefd[0]); close(signalPipefd[1]); }
     if(progress_level>=5) { destroyFileSystem(); }
-    if(progress_level>=6) { free(worker_threads); }
+    if(progress_level>=6) { destroySharedStruct(&currentClientConnections); }
+    if(progress_level>=7) { free(worker_threads); }
     
     //restoreOldMask();
 }

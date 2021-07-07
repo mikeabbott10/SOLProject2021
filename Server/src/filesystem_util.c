@@ -74,6 +74,52 @@ void freeClientsList(client_t* list, char warnClients){
 }
 
 /**
+ * Remove clientFD from the client_t list
+ * @param clientFD: the descriptor we are looking for
+ * @param list: the list
+ * @return
+ *      0 if client was removed
+ *      1 if client not in list
+ */
+int removeClientFromList(client_fd_t clientFD, client_t* list){
+    client_t* currNode = list;
+    client_t* prevNode = NULL;
+    while(currNode != NULL){
+        if(clientFD == currNode->client_fd)
+            break;
+        prevNode = currNode;
+        currNode = currNode->next;
+    }
+    if(currNode != NULL){
+        // the client's in list
+        prevNode->next = currNode->next;
+        free(currNode);
+        return 0;
+    }
+    return 1;
+}
+
+/**
+ * Look for clientFD in the client_t list
+ * @param clientFD: the descriptor we are looking for
+ * @param list: the list
+ * @return
+ *      0 if client was found
+ *      1 if client not in list
+ */
+int searchClientInList(client_fd_t clientFD, client_t* list){
+    client_t* currNode = list;
+    while(currNode != NULL){
+        if(clientFD == currNode->client_fd)
+            return 0;
+        currNode = currNode->next;
+    }
+    return 1;
+}
+
+
+
+/**
  * Destroy a file freeing the memory and destroying mutexes and condition variable
  * @param file: the pointer to the file
  * @return the file content
@@ -97,7 +143,7 @@ char* destroyFile(file_t* file, char warn_lockers){
  * @param value: the new client fd
  * @return
  *      -1 if fatal error occurred
- *      1 if everything's ok
+ *      0 if everything's ok
  */
 int clientListTailInsertion(client_t** listPtr, client_fd_t value){
     client_t* newC = (client_t*) malloc(sizeof(client_t));
@@ -115,27 +161,28 @@ int clientListTailInsertion(client_t** listPtr, client_fd_t value){
         }
         currPtr->next = newC;
     }
-    return 1;
+    return 0;
 }
 
 /**
  * Send content to the client clientFd
  * @param clientFd: the client we want to send the message to
  * @param content: the string we are going to send
+ * @param TAG: the tag before the content
  * @return
  *      -1 if fatal error occurred
  *      0 if everything's ok
  */
-int sendContentToClient(client_fd_t clientFd, char* content){
+int sendContentToClient(client_fd_t clientFd, char* content, char* TAG){
     if(content == NULL)
         return 0;
-    printf("content:%s", content);
+    //printf("content:%s", content);
     char* str;
-    int newLen = strlen(REMOVED_FILE_CONTENT)+ strlen(content);
+    int newLen = strlen(TAG)+ strlen(content);
     ec( str = calloc(newLen + 1, sizeof(char)), 
         NULL, return -1 
     );
-    snprintf(str, sizeof(str)+1, "%s%s", REMOVED_FILE_CONTENT, content);
+    snprintf(str, sizeof(str)+1, "%s%s", TAG, content);
     sendTo(clientFd, str, newLen);
     return 0;
 }
@@ -147,7 +194,10 @@ int sendContentToClient(client_fd_t clientFd, char* content){
  * The file is created if it doesn't exist and flags==O_CREATE.
  * The procedure fails with logical error if the file exists and (flags & O_CREATE == 1)
  * or if the file doesn't exist and (flags & O_CREATE == 0)
- * 
+ * @param msgPtr: the message we shall send back to the client
+ * @param client_fd: the client
+ * @param flags: the flags of the open request
+ * @param file_path: the path of the file to open
  * @return 
  *      -1 if fatal error occurred
  *      1 if logical error occurred (i.e. creation of an existing file...)
@@ -160,7 +210,6 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
         if( !(flags & O_CREATE) ){
             // O_CREATE is not part of the flags
             ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
-            errno = ENOENT;
             ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
             return 1;
         }
@@ -226,18 +275,77 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
     return 0;
 }
 
+/**
+ * Close a previously opened file
+ * @param msgPtr: the message we shall send back to the client
+ * @param client_fd: the client
+ * @param file_path: the path of the file to close
+ * @return 
+ *      -1 if fatal error occurred
+ *      1 if logical error occurred (i.e. closing an unopened file)
+ *      0 otherwise
+ */ 
 int closeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
     LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
+        ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+        ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
+        return 1;
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
-
+        START_WRITE( file, fs, 1, return -1 );
+        // does client_fd previously opened the file?
+        if( removeClientFromList(client_fd, file->opened_by) == 0 ){
+            // a client was removed
+            ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
+        }else{
+            // client not in list
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+        }
+        DONE_WRITE(file, fs, , return -1);
     );
-    return 1;
+    return 0;
 }
 
+/**
+ * Read a file
+ * @param msgPtr: the message we shall send back to the client
+ * @param client_fd: the client
+ * @param file_path: the path of the file to read
+ * @return 
+ *      -1 if fatal error occurred
+ *      1 if logical error occurred (i.e. reading an unopened file)
+ *      0 otherwise
+ */ 
 int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
-    return 1;
+    file_t* file;
+    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+        // - NOT FOUND PROCEDURE --------------------------------------------------------------------
+        ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+        ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
+        return 1;
+        , // - FOUND PROCEDURE ----------------------------------------------------------------------
+        START_READ( file, fs, 1, return -1 );
+        // is the file locked by someone else? OR is the client opened by client_fd?
+        if( (file->locked_by != NULL && (file->locked_by)->client_fd != client_fd) || 
+                searchClientInList(client_fd, file->opened_by)!=0 ){
+            // file is locked by someone else
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            return 1;
+        }
+        // the client previously opened the file and is, maybe, the locker
+        
+        if(file->content == NULL){
+            ec( buildMsg(msgPtr, NO_CONTENT_FILE ), -1, return -1 );
+            return 1;
+        }
+
+        sendContentToClient(client_fd, file->content, READ_FILE_CONTENT);
+        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
+
+        DONE_READ(file, fs, , return -1);
+    );
+    return 0;
 }
 
 int readNFiles(msg_t* msgPtr, client_fd_t client_fd, int N){
@@ -449,7 +557,7 @@ int deleteFile(file_t* file, client_fd_t clientFd, char sendContentBackToClient)
     fs.currFilesNumber--;
     tempContent = destroyFile(file, 1);
     if( sendContentBackToClient ){
-        if( sendContentToClient(clientFd, tempContent) == -1 ){
+        if( sendContentToClient(clientFd, tempContent, REMOVED_FILE_CONTENT) == -1 ){
             free(tempContent);
             return -1;
         }

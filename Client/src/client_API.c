@@ -25,6 +25,11 @@ int getServerResponse(){
         n = getServerMessage(sockfd, &response);
         if(n!=1)
             break;
+        if(strncmp(response, READ_FILE_CONTENT, 3)==0){
+            printf("Read file content:\n%s\n", response+3);
+            continue;
+        }
+
         if(strncmp(response, REMOVED_FILE_CONTENT, 3)==0){
             printf("Evicted file content:\n%s\n", response+3);
             continue;

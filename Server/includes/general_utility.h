@@ -11,6 +11,8 @@
 #define WRONG_FILEPATH_RESPONSE "WFP"
 #define NOT_PERMITTED_ACTION_RESPONSE "NPA"
 #define REMOVED_FILE_CONTENT "RFC"
+#define READ_FILE_CONTENT "RFF"
+#define NO_CONTENT_FILE "NCF"
 
 /*Equality Check*/
 #define ec(s, r, c)         \

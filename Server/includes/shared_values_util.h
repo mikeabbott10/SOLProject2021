@@ -3,7 +3,7 @@
 #include <pthread.h>
 
 /* USAGE:
-//init synchronization struct for the termination shared value (quit flag)
+//init synchronization struct for the shared value
 INIT_SHARED_STRUCT(sharedStruct, char, 0, exit(EXIT_FAILURE);, 
     free(sharedStruct.value);
     exit(EXIT_FAILURE);
@@ -23,31 +23,31 @@ SHARED_VALUE_WRITE(sharedStruct,
 
 */
 #define INIT_SHARED_STRUCT(s, type, initVal, onMemError, onConcError)   \
-    s.value = malloc(sizeof(type));                                    \
+    s.value = malloc(sizeof(type));                                     \
     if(s.value == NULL){                                                \
         onMemError                                                      \
-    }else{                                                               \
-        *((type*)s.value) = initVal;                                   \
-        s.activeReaders = 0;                                           \
-        s.activeWriters = 0;                                           \
-        s.waitingReaders = 0;                                          \
-        s.waitingWriters = 0;                                          \
-        if( initSharedStructMuxNCondVar(&s) == -1){                      \
+    }else{                                                              \
+        *((type*)s.value) = initVal;                                    \
+        s.activeReaders = 0;                                            \
+        s.activeWriters = 0;                                            \
+        s.waitingReaders = 0;                                           \
+        s.waitingWriters = 0;                                           \
+        if( initSharedStructMuxNCondVar(&s) == -1){                     \
             onConcError                                                 \
         }                                                               \
     }                                                                   \
         
 /* Read, unfair for readers */
 #define SHARED_VALUE_READ(s, c)                 \
-    startRead_not_readers_fair(&s);             \
+    startRead_fair_fifo(&s);                    \
     c                                           \
-    doneRead_not_readers_fair(&s);              \
+    doneRead_fair_fifo(&s);                     \
 
 /* Write, unfair for readers */
 #define SHARED_VALUE_WRITE(s, c)                \
-    startWrite_not_readers_fair(&s);            \
+    startWrite_fair_fifo(&s);                   \
     c                                           \
-    doneWrite_not_readers_fair(&s);             \
+    doneWrite_fair_fifo(&s);                    \
 
 // shared struct
 typedef struct{
@@ -63,6 +63,7 @@ typedef struct{
 
 int initSharedStructMuxNCondVar(SharedStruct*);
 void destroySharedStruct(SharedStruct*);
+
 void startRead_not_readers_fair(SharedStruct* );
 void doneRead_not_readers_fair(SharedStruct* );
 void startWrite_not_readers_fair(SharedStruct* );

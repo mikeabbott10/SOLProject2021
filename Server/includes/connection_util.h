@@ -6,6 +6,7 @@
 #include<stdlib.h>
 #include<pthread.h>
 #include <sys/select.h>
+#include <shared_values_util.h>
 
 void* clientBuffer; /*it will be a client_fd_buffer* */
 
@@ -28,7 +29,7 @@ int master_progress = 0;
 void master_clean_exit(int, int*);
 int updatemax(fd_set, int);
 
-int currentClientConnections = 0;
+SharedStruct currentClientConnections;
 
 /*master/workers pipe*/
 int pipefd[2];
