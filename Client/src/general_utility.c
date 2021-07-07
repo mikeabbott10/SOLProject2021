@@ -66,7 +66,8 @@ int max(int args, ...){
  */ 
 char* intToStr(int n, int strLen){
     if(n<0 || n>pow(10,strLen)){
-        puts("intToStr: n not valid for conversion");
+        //puts("intToStr: n not valid for conversion");
+        errno = EINVAL;
         return NULL;
     }
     int length = snprintf( NULL, 0, "%0*d", strLen, n);

@@ -95,7 +95,9 @@ void* workers_fun(void* p){
         clientFD = -1; // init the fd
         clientBufferStatus = shared_buffer_get(client_fd_buffer, client_fd_t, 
             clientBuffer, &clientFD);
-            
+
+        printf("client: %d, got from buffer\n", clientFD);
+        
         if( clientBufferStatus != 0 ){
             // a fatal error occurred. Let's stop the whole server
             pthread_kill(sig_handler_tid, SIGINT);
@@ -109,8 +111,6 @@ void* workers_fun(void* p){
         fflush(stdout);
         if(connStatus == 0 || connStatus == -2){
             close(clientFD);
-            free(request.action_related_file_path);
-            free(request.content);
             continue;
         }else if(connStatus == -1){
             /*client closed connection while server was waiting for its request*/
@@ -127,7 +127,7 @@ void* workers_fun(void* p){
         printf("action: %d,  action_flags: %d,  file_path: %s,  content: %s\n", 
             request.action, request.action_flags, request.action_related_file_path, request.content);
         
-        getNullMessage(&msg); // init the message
+        buildMsg(&msg, NULL); // init the message
         if( performActionAndGetResponse(request, &msg) == -1){
             /* fatal error occurred, stop here */
             free(msg.content);
@@ -147,6 +147,10 @@ void* workers_fun(void* p){
             /*no message for the client OR client closed connection while server was writing to it*/
             free(request.action_related_file_path);
             free(request.content);
+            if( write(pipefd[1], &clientFD, sizeof(clientFD)) == -1 ){
+                pthread_kill(sig_handler_tid, SIGINT);
+                break;
+            }
             continue;
         }
         
@@ -247,6 +251,7 @@ void * master_fun(void* p){
                 FD_CLR(connfd, &set); 
 		        if (connfd == fdmax) fdmax = updatemax(set, fdmax);
                 /*push connfd to the client fd buffer*/
+                printf("putting client %d in buffer\n", connfd);
                 if( shared_buffer_put(client_fd_buffer, client_fd_t, clientBuffer, connfd) != 0 ){
                     // fatal error occurred
                     pthread_kill(sig_handler_tid, SIGINT);

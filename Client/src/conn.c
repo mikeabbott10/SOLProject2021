@@ -17,7 +17,7 @@ int readn(long fd, void *buf, size_t size) {
             if (errno == EINTR) continue;
             return -1;
         }
-        if (r == 0) return 0;   // EOF
+        if (r == 0){ errno = ECONNABORTED; return 0; }  // EOF
         left -= r;
         bufptr += r;
     }
@@ -40,7 +40,7 @@ int writen(long fd, void *buf, size_t size) {
             if (errno == EINTR) continue;
             return -1;
         }
-        if (r == 0) return 0;  
+        if (r == 0) { errno = ECONNABORTED; return 0; }
             left -= r;
         bufptr += r;
     }
@@ -68,6 +68,7 @@ int getServerMessage(int socketFD, char **msg){
     printf("Len:\n%s\n", msgLenBuf);
     if( isInteger(msgLenBuf, &msgLen) != 0){
         free(msgLenBuf);
+        errno = EPROTO; // Protocol error (POSIX.1-2001).
         return -2;
     }
 

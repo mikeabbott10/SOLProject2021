@@ -40,7 +40,6 @@ int signalPipefd[2];
 pthread_t *worker_threads;
 typedef void* (*workerFun)(void*);
 char spawnWorkers(int, workerFun);
-void getNullMessage(msg_t*);
 int getClientRequest(int clientFD, request_t* request);
 int parseMessage(char*, int, request_t*);
 int performActionAndGetResponse(request_t, msg_t*);

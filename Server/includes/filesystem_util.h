@@ -52,6 +52,13 @@
         ec_n( CV_SIGNAL(filePtr->Go), 0, errorProc );               \
     ec( SAFE_UNLOCK(filePtr->mux), 1, errorProc );                  \
 
+#define LOCK_FS_SEARCH_FILE(clientFd, filePtr, path, not_found_p, found_p)  \
+    ec( SAFE_LOCK(fs.mux), 1, return -1 );                                  \
+    printf("fd locked the storage: %d\n", clientFd);                        \
+    filePtr = searchFile(path);                                             \
+    if(filePtr == NULL){ not_found_p }                                      \
+    else{ found_p }                                                         \
+
 /*file abstraction*/
 typedef struct file{
     char* path; /*the path of the file*/

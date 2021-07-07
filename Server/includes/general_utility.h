@@ -1,8 +1,9 @@
 #if !defined(_GENERAL_UTILITY_H)
 #define _GENERAL_UTILITY_H
+#define _POSIX_C_SOURCE 200809L
 #include<pthread.h>
 #include<assert.h>
-#include<shared_values_util.h>
+#include<string.h>
 
 #define MSG_LEN_LENGTH 9
 #define FINE_REQ_RESPONSE "OK"
@@ -57,6 +58,7 @@ typedef struct cl{
     struct cl* next;
 } client_t;
 
+int buildMsg(msg_t*, char*);
 
 /*----------- termination stuff --------------------------------------------------------------------*/
 /*termination flag*/

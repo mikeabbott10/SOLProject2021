@@ -9,6 +9,42 @@
 #include <sys/un.h> /* ind AF_UNIX */
 #define UNIX_PATH_MAX 108 /* man 7 unix */
 
+/*---------- UTIL -----------------------------------------------------------------------------------*/
+
+/**
+ * Get server response(s)
+ * @return
+ *      0 if we got a fine response
+ *      -1 otherwise (errno is setted up)
+ */
+int getServerResponse(){
+    char *response = NULL;
+    int n;
+    int retVal = -1;
+    while(1){
+        n = getServerMessage(sockfd, &response);
+        if(n!=1)
+            break;
+        if(strncmp(response, REMOVED_FILE_CONTENT, 3)==0){
+            printf("Evicted file content:\n%s\n", response+3);
+            continue;
+        }
+        if(strncmp(response, LOCKED_FILE_REMOVED, 3)==0){
+            puts("The locked file was removed");
+            errno = ECANCELED; // Operation canceled (POSIX.1-2001)
+        }else if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
+            retVal = 0;
+        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
+            errno = ENOENT; // No such file or directory (POSIX.1-2001).
+        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
+            errno = EPERM; // Operation not permitted (POSIX.1-2001).
+        break;
+    }
+    free(response);
+    return retVal;
+}
+
+/*---------- API ------------------------------------------------------------------------------------*/
 /**
  * Open an AF_UNIX connection to the socket file sockname.
  * @param sockname: the socket path
@@ -70,19 +106,9 @@ int openFile(const char* pathname, int flags){
         free(msg.content);
         return -1;
     }
-    int retVal = -1;
-    char *response = NULL;
-    if(getServerMessage(sockfd, &response)==1){
-        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
-            retVal = 0;
-        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
-            errno = ENOENT;
-        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
-            errno = EPERM;
-    }
-    if(response!=NULL) free(response);
+    puts("msg sent");
     free(msg.content);
-    return retVal;
+    return getServerResponse();
 }
 
 /**
@@ -97,19 +123,8 @@ int closeFile(const char* pathname){
         free(msg.content);
         return -1;
     }
-    int retVal = -1;
-    char *response = NULL;
-    if(getServerMessage(sockfd, &response)==1){
-        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
-            retVal = 0;
-        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
-            errno = ENOENT;
-        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
-            errno = EPERM;
-    }
-    if(response!=NULL) free(response);
     free(msg.content);
-    return retVal;
+    return getServerResponse();
 }
 
 /**
@@ -123,21 +138,8 @@ int lockFile(const char* pathname){
         free(msg.content);
         return -1;
     }
-    int retVal = -1;
-    char *response = NULL;
-    if(getServerMessage(sockfd, &response)==1){
-        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
-            retVal = 0;
-        else if(strncmp(response, PENDING_REQ_RESPONSE, 3)==0)
-            retVal = 0;
-        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
-            errno = ENOENT;
-        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
-            errno = EPERM;
-    }
-    if(response!=NULL) free(response);
     free(msg.content);
-    return retVal;
+    return getServerResponse();
 }
 
 /**
@@ -151,19 +153,8 @@ int unlockFile(const char* pathname){
         free(msg.content);
         return -1;
     }
-    int retVal = -1;
-    char *response = NULL;
-    if(getServerMessage(sockfd, &response)==1){
-        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
-            retVal = 0;
-        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
-            errno = ENOENT;
-        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
-            errno = EPERM;
-    }
-    if(response!=NULL) free(response);
     free(msg.content);
-    return retVal;
+    return getServerResponse();
 }
 
 /**
@@ -177,19 +168,8 @@ int removeFile(const char* pathname){
         free(msg.content);
         return -1;
     }
-    int retVal = -1;
-    char *response = NULL;
-    if(getServerMessage(sockfd, &response)==1){
-        if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
-            retVal = 0;
-        else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
-            errno = ENOENT;
-        else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
-            errno = EPERM;
-    }
-    if(response!=NULL) free(response);
     free(msg.content);
-    return retVal;
+    return getServerResponse();
 }
 
 /*

@@ -175,12 +175,6 @@ int parseMessage(char* message, int len, request_t* request){
     return 1;
 }
 
-/* we make a NULL msg_t value on an existinf msg_t */
-void getNullMessage(msg_t *msg){
-    msg->content = NULL;
-    msg->len = 0;
-}
-
 /**
  * Perform an action and build a response
  * @param req: the request we get the action from

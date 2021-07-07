@@ -11,7 +11,6 @@
 
 int main(int argc, char **argv){
     if(argc<=1){
-        puts("Please select an option.");
         print_usage(argv[0]);
         return -1;
     }
@@ -38,11 +37,11 @@ int main(int argc, char **argv){
     /*first operation*/
     openConnection(ml.f_socketpath, ml.t_time, spec);
     
-    ec_n( openFile("/file/path(14)", O_CREATE|O_LOCK), 0, );
+    ec_n( openFile("/file/path(14)", O_CREATE), 0, );
     ec_n( openFile("/file/path2(15)", O_CREATE|O_LOCK), 0, );
-    /*ec_n( lockFile("/file/path(14)"), 0, );
-    ec_n( unlockFile("/file/path(14)"), 0, );
-    ec_n( removeFile("/file/path(14)"), 0, );*/
+    //ec_n( lockFile("/file/path(14)"), 0, );
+    //ec_n( unlockFile("/file/path(14)"), 0, );
+    //ec_n( removeFile("/file/path(14)"), 0, );
 
     closeConnection(ml.f_socketpath);
     

@@ -233,3 +233,28 @@ int sendTo(int fd, char* content, int length){
     free(msg.content);
     return 1;
 }
+
+/* we make a NULL msg_t value on an existinf msg_t */
+void getNullMessage(msg_t *msg){
+    msg->content = NULL;
+    msg->len = 0;
+}
+
+/**
+ * Build the response for the client
+ * @param msgPtr: the pointer to the message struct
+ * @param response: the content of the message
+ * @return
+ *      -1 if fatal error occurred
+ *      0 otherwise
+ */
+int buildMsg(msg_t* msgPtr, char* response){
+    if(response == NULL){
+        getNullMessage(msgPtr);
+        return 0;
+    }
+    // build response
+    ec( msgPtr->content = strdup(response), NULL, return -1 );
+    msgPtr->len = strlen(response); 
+    return 0;
+}

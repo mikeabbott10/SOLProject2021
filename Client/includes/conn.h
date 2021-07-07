@@ -11,10 +11,10 @@
 
 #define MSG_LEN_LENGTH 9
 #define FINE_REQ_RESPONSE "OK"
-#define PENDING_REQ_RESPONSE "PR"
+#define LOCKED_FILE_REMOVED "LFR"
 #define WRONG_FILEPATH_RESPONSE "WFP"
 #define NOT_PERMITTED_ACTION_RESPONSE "NPA"
-
+#define REMOVED_FILE_CONTENT "RFC"
 
 typedef struct msg {
     int len;

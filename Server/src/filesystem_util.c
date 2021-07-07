@@ -13,7 +13,15 @@ read:
 acquire globale - cerca file - operazione - release globale
 
 */
-
+/*----------- Util --------------------------------------------------------------------------------*/
+/* Print the storage*/
+void printFs(){
+    file_t* currNode = fs.fileListHead;
+    while(currNode != NULL){
+        printf("%s\n %s\n\n", currNode->path, currNode->content);
+        currNode = currNode->next;
+    }
+}
 /**
  * Look for the file at path
  * @param path: the file path
@@ -32,7 +40,7 @@ file_t* searchFile(char* path){
  *      1 if everything's ok
  */
 int buildNewFile(file_t** filePtr, char* path){
-    ec( (*filePtr)->path = calloc(strlen(path) + 1, sizeof(char)), NULL, return -1 );
+    ec( (*filePtr)->path = strdup(path), NULL, return -1 );
     (*filePtr)->content = NULL;
     (*filePtr)->size = 0;
     (*filePtr)->locked_by = NULL;
@@ -110,6 +118,29 @@ int clientListTailInsertion(client_t** listPtr, client_fd_t value){
     return 1;
 }
 
+/**
+ * Send content to the client clientFd
+ * @param clientFd: the client we want to send the message to
+ * @param content: the string we are going to send
+ * @return
+ *      -1 if fatal error occurred
+ *      0 if everything's ok
+ */
+int sendContentToClient(client_fd_t clientFd, char* content){
+    if(content == NULL)
+        return 0;
+    printf("content:%s", content);
+    char* str;
+    int newLen = strlen(REMOVED_FILE_CONTENT)+ strlen(content);
+    ec( str = calloc(newLen + 1, sizeof(char)), 
+        NULL, return -1 
+    );
+    snprintf(str, sizeof(str)+1, "%s%s", REMOVED_FILE_CONTENT, content);
+    sendTo(clientFd, str, newLen);
+    return 0;
+}
+
+
 /*----------- Middleware -----------------------------------------------------------------------*/
 /**
  * Put the client into the openers list of the file referred by file_path.
@@ -123,14 +154,14 @@ int clientListTailInsertion(client_t** listPtr, client_fd_t value){
  *      0 otherwise
  */ 
 int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
-    ec( SAFE_LOCK(fs.mux), 1, return -1 );
-    file_t* file = searchFile(file_path);
-    if(file==NULL){
-        // the file is not in the storage
+    file_t* file;
+    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+        // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         if( !(flags & O_CREATE) ){
             // O_CREATE is not part of the flags
             ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
             errno = ENOENT;
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
             return 1;
         }
         
@@ -151,6 +182,9 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             return -1;
         }
 
+        puts("file doesn't exist");
+        printFs();
+
         // the new file has been successfully inserted
         START_WRITE(file, fs, 1, return -1);
 
@@ -163,12 +197,16 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             file->writeOwner = client_fd;
         }
 
-    }else{
+        , // - FOUND PROCEDURE ----------------------------------------------------------------------
         if( flags & O_CREATE ){
             // O_CREATE has been specified
             ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
             return 1;
         }
+
+        puts("file exists");
+        printFs();
 
         // the new file exists
         START_WRITE(file, fs, 1, return -1);
@@ -177,20 +215,24 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             // let's make it locked by client_fd
             clientListTailInsertion(&(file->locked_by), client_fd);
         }
-    }
+    );
 
     // let's make the new file opened by client_fd
     clientListTailInsertion(&(file->opened_by), client_fd);
 
     DONE_WRITE(file, fs, , return -1);
 
-    // build response
-    ec( msgPtr->content = strdup(FINE_REQ_RESPONSE), NULL, return -1 );
-    msgPtr->len = strlen(FINE_REQ_RESPONSE); 
+    ec( buildMsg(msgPtr, (flags & O_LOCK) ? NULL : FINE_REQ_RESPONSE ), -1, return -1 );
     return 0;
 }
 
 int closeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
+    file_t* file;
+    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+        // - NOT FOUND PROCEDURE --------------------------------------------------------------------
+        , // - FOUND PROCEDURE ----------------------------------------------------------------------
+
+    );
     return 1;
 }
 
@@ -268,9 +310,11 @@ int initFileSystem(size_t file_capacity, size_t byte_capacity, char eviction_pol
  * @param the list to free
  */
 void freeFilesList(file_t* list){
+    puts("destroying fs, FILES:");
     file_t* nextNode;
     while(list != NULL){
         nextNode = list->next;
+        printf("%s\n %s\n\n", list->path, list->content);
         free( destroyFile(list, 0) ); // it returns the content of the file. We free it too
         list = nextNode;
     }
@@ -315,7 +359,6 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
                 if( evictFiles(newSize - fs.byte_capacity, newFilesNum - fs.file_capacity, 
                         client_fd) == -1 ){
                     // fatal error occurred while evicting files
-                    // TODO: free stuff
                     return -1;
                 }
             }else{
@@ -379,27 +422,6 @@ int evictFiles(int bytesNum, int filesNum, client_fd_t clientFd){
     return 0;
 }
 
-/**
- * Send content to the client clientFd
- * @param clientFd: the client we want to send the message to
- * @param content: the string we are going to send
- * @return
- *      -1 if fatal error occurred
- *      0 if everything's ok
- */
-int sendContentToClient(client_fd_t clientFd, char* content){
-    if(content == NULL)
-        return 0;
-    printf("content:%s", content);
-    char* str;
-    int newLen = strlen(REMOVED_FILE_CONTENT)+ strlen(content);
-    ec( str = calloc(newLen + 1, sizeof(char)), 
-        NULL, return -1 
-    );
-    snprintf(str, sizeof(str)+1, "%s%s", REMOVED_FILE_CONTENT, content);
-    sendTo(clientFd, str, newLen);
-    return 0;
-}
 
 /**
  * Delete a file
@@ -424,6 +446,7 @@ int deleteFile(file_t* file, client_fd_t clientFd, char sendContentBackToClient)
         (file->next)->prev = file->prev;
     }
     icl_hash_delete(fs.hFileTable, file->path, NULL, NULL);
+    fs.currFilesNumber--;
     tempContent = destroyFile(file, 1);
     if( sendContentBackToClient ){
         if( sendContentToClient(clientFd, tempContent) == -1 ){
