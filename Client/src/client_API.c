@@ -25,17 +25,17 @@ int getServerResponse(){
         n = getServerMessage(sockfd, &response);
         if(n!=1)
             break;
+        
         if(strncmp(response, READ_FILE_CONTENT, 3)==0){
             printf("Read file content:\n%s\n", response+3);
             continue;
         }
-
         if(strncmp(response, REMOVED_FILE_CONTENT, 3)==0){
             printf("Evicted file content:\n%s\n", response+3);
             continue;
         }
+
         if(strncmp(response, LOCKED_FILE_REMOVED, 3)==0){
-            puts("The locked file was removed");
             errno = ECANCELED; // Operation canceled (POSIX.1-2001)
         }else if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
             retVal = 0;
@@ -43,6 +43,8 @@ int getServerResponse(){
             errno = ENOENT; // No such file or directory (POSIX.1-2001).
         else if(strncmp(response, NOT_PERMITTED_ACTION_RESPONSE, 3)==0)
             errno = EPERM; // Operation not permitted (POSIX.1-2001).
+        else if(strncmp(response, CONTENT_TOO_LARGE, 3)==0)
+            errno = EFBIG; // File too large (POSIX.1-2001).
         break;
     }
     free(response);

@@ -117,8 +117,6 @@ int searchClientInList(client_fd_t clientFD, client_t* list){
     return 1;
 }
 
-
-
 /**
  * Destroy a file freeing the memory and destroying mutexes and condition variable
  * @param file: the pointer to the file
@@ -187,6 +185,22 @@ int sendContentToClient(client_fd_t clientFd, char* content, char* TAG){
     return 0;
 }
 
+/**
+ * Append content to the end of the file
+ * @param filePtr: the file
+ * @param content: the content
+ * @param contentSize: the content length
+ * @return
+ *      -1 if fatal error occurred
+ *      0 otherwise
+ */
+int appendContentToFile(file_t* filePtr, char* content, int contentSize){
+    ec( filePtr->content = realloc(filePtr->content, (filePtr->size + contentSize + 1)*sizeof(char)), 
+        NULL, return -1
+    );
+    memcpy(filePtr->content + filePtr->size, content, contentSize);
+    return 0;
+}
 
 /*----------- Middleware -----------------------------------------------------------------------*/
 /**
@@ -230,6 +244,12 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
             return -1;
         }
+        if(fileInsertion == 1){
+            // file's too large for this filesystem
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
+            ec( buildMsg(msgPtr, CONTENT_TOO_LARGE ), -1, return -1 );
+            return 1;
+        }
 
         puts("file doesn't exist");
         printFs();
@@ -256,6 +276,9 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
 
         puts("file exists");
         printFs();
+
+        if(fs.eviction_policy == LRU)
+            getFsFileToTail(file);
 
         // the new file exists
         START_WRITE(file, fs, 1, return -1);
@@ -294,6 +317,10 @@ int closeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         return 1;
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
         START_WRITE( file, fs, 1, return -1 );
+
+        // update the writeOwner
+        file->writeOwner = -1;
+
         // does client_fd previously opened the file?
         if( removeClientFromList(client_fd, file->opened_by) == 0 ){
             // a client was removed
@@ -302,6 +329,7 @@ int closeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
             // client not in list
             ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
         }
+
         DONE_WRITE(file, fs, , return -1);
     );
     return 0;
@@ -325,7 +353,11 @@ int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
         return 1;
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
+        if(fs.eviction_policy == LRU)
+            getFsFileToTail(file);
+
         START_READ( file, fs, 1, return -1 );
+
         // is the file locked by someone else? OR is the client opened by client_fd?
         if( (file->locked_by != NULL && (file->locked_by)->client_fd != client_fd) || 
                 searchClientInList(client_fd, file->opened_by)!=0 ){
@@ -343,10 +375,11 @@ int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         sendContentToClient(client_fd, file->content, READ_FILE_CONTENT);
         ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
 
-        DONE_READ(file, fs, , return -1);
+        DONE_READ(file, fs, file->writeOwner = -1;, return -1);
     );
     return 0;
 }
+
 
 int readNFiles(msg_t* msgPtr, client_fd_t client_fd, int N){
     return 1;
@@ -356,8 +389,66 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd, char* content, char* file_pa
     return 1;
 }
 
-int appendToFile(msg_t* msgPtr, client_fd_t client_fd, char* content, char* file_path){
-    return 1;
+/**
+ * Append content to a file
+ * @param msgPtr: the message we shall send back to the client
+ * @param client_fd: the client
+ * @param content: the content to append to the file
+ * @param contentSize: the content length
+ * @param file_path: the path of the file to read
+ * @return 
+ *      -1 if fatal error occurred
+ *      1 if logical error occurred (i.e. appending to an unopened file)
+ *      0 otherwise
+ */ 
+int appendToFile(msg_t* msgPtr, client_fd_t client_fd, char* content, int contentSize, char* file_path){
+    file_t* file;
+    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+        // - NOT FOUND PROCEDURE --------------------------------------------------------------------
+        ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+        ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
+        return 1;
+        , // - FOUND PROCEDURE ----------------------------------------------------------------------
+        if(fs.eviction_policy == LRU)
+            getFsFileToTail(file);
+        
+        int newFsSize = contentSize + fs.currSize;
+        int newFileSize = contentSize + file->size;
+
+        /* compare new file size and fs capacity */
+        if(newFileSize > fs.byte_capacity){
+            /* no way we can append this content to the file. Rejected*/
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1 );
+            ec( buildMsg(msgPtr, CONTENT_TOO_LARGE ), -1, return -1 );
+            return 1;
+        }
+        
+        // compare new storage size and capacity
+        if(newFsSize > fs.byte_capacity){
+            // eviction needed
+            ec( evictFiles(newFsSize - fs.byte_capacity, -1, client_fd), -1, return -1 );
+        }
+
+        // don't unlock the store here because of readNfiles handling: 
+        // deadlock if some N files reader locks the store
+        START_WRITE( file, fs, 0, return -1 );
+
+        // is the file locked by someone else? OR is the client opened by client_fd?
+        if( (file->locked_by != NULL && (file->locked_by)->client_fd != client_fd) || 
+                searchClientInList(client_fd, file->opened_by)!=0 ){
+            // file is locked by someone else
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            return 1;
+        }
+        // the client previously opened the file and is, maybe, the locker
+        
+        ec( appendContentToFile(file, content, contentSize), -1, return -1 );
+
+        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
+
+        DONE_READ(file, fs, file->writeOwner = -1;, return -1);
+    );
+    return 0;
 }
 
 int lockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
@@ -412,7 +503,6 @@ int initFileSystem(size_t file_capacity, size_t byte_capacity, char eviction_pol
     return 0;
 }
 
-
 /**
  * Free the whole list of file_t list
  * @param the list to free
@@ -435,6 +525,69 @@ void destroyFileSystem(){
     // destroy hash table, no free functions here because the keys are inside the files list
     icl_hash_destroy(fs.hFileTable,NULL,NULL);
     freeFilesList(fs.fileListHead);
+}
+
+/**
+ * Detach a file from the storage
+ * @param filePtr: the pointer to the file
+ */
+void detachFileFromStorage(file_t* filePtr){
+    if( filePtr->prev == NULL ){
+        // this is the head of the list
+        if( filePtr->next != NULL)
+            (filePtr->next)->prev = NULL;
+        else{ 
+            //filePtr is the tail too
+            fs.fileListTail = NULL;
+        }
+        fs.fileListHead = filePtr->next;
+    }else{
+        // not the head of the list
+        if(filePtr->next != NULL)
+            (filePtr->next)->prev = filePtr->prev;
+        else{
+            //filePtr is the tail
+            (filePtr->prev)->next = NULL; // for sure filePtr->prev exists here
+            fs.fileListTail = filePtr->prev;
+        }
+        (filePtr->prev)->next = filePtr->next;
+    }
+}
+
+/**
+ * Push a file to the storage tail
+ * @param filePtr: the pointer to the file
+ */
+void pushFileToStorageTail(file_t* filePtr){
+    if( fs.fileListHead == NULL ){
+        /* storage is empty */
+        fs.fileListHead = filePtr;
+        fs.fileListTail = fs.fileListHead;
+        filePtr->next = NULL;
+        filePtr->prev = NULL;
+    }else{
+        (fs.fileListTail)->next = filePtr;
+        filePtr->prev = fs.fileListTail;
+        filePtr->next = NULL;
+        fs.fileListTail = filePtr;
+    }
+}
+
+/**
+ * Move the file to the end of the storage (to the tail)
+ * @param filePtr: the pointer to the file
+ * @return 
+ *      -1 if fatal error occurred
+ *      0 if everything's ok
+ */
+int getFsFileToTail(file_t* filePtr){
+    if(filePtr == NULL)
+        return -1;
+    // detach the file from the storage
+    detachFileFromStorage(filePtr);
+    // insert the file to the tail
+    pushFileToStorageTail(filePtr);
+    return 0;
 }
 
 /**
@@ -464,26 +617,18 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
         /* storage is not empty */
         if( eviction_needed ){
             if(performEviction){
-                if( evictFiles(newSize - fs.byte_capacity, newFilesNum - fs.file_capacity, 
-                        client_fd) == -1 ){
-                    // fatal error occurred while evicting files
-                    return -1;
-                }
+                ec( evictFiles(newSize - fs.byte_capacity, newFilesNum - fs.file_capacity, client_fd),
+                    -1, return -1 
+                );
             }else{
                 //got a serious problem here
                 return -1;
             }
         }
     }
-    if( fs.currFilesNumber == 0 ){
-        /* storage is empty */
-        /* allowed to insert the file here */
-        fs.fileListHead = filePtr;
-        fs.fileListTail = fs.fileListHead;
-    }else{
-        fs.fileListTail = filePtr;
-        filePtr->prev = fs.fileListTail;
-    }
+    
+    // insert the file to the tail
+    pushFileToStorageTail(filePtr);
 
     /* we inserted the file here, let's put it in the hash table and update the size values */
     /* update size */
@@ -519,8 +664,7 @@ int evictFiles(int bytesNum, int filesNum, client_fd_t clientFd){
                 START_WRITE(currFile, fs, 0, return -1);
                 filesNum--;
                 bytesNum -= currFile->size;
-                if( deleteFile(currFile, clientFd, 1) == -1 )
-                    return -1;
+                ec( deleteFile(currFile, clientFd, 1), -1, return -1 );
             }
         }
         currFile = nextFile;
@@ -533,29 +677,25 @@ int evictFiles(int bytesNum, int filesNum, client_fd_t clientFd){
 
 /**
  * Delete a file
- * @param file: the pointer to the file
+ * @param filePtr: the pointer to the file
  * @param clientFd: the client who triggered the deletion
  * @param sendContentBackToClient: says if we want to send the content back to clientFd
  * @return
  *      -1 if fatal error
  *      0 otherwise
  */
-int deleteFile(file_t* file, client_fd_t clientFd, char sendContentBackToClient){
-    if( file == NULL)
+int deleteFile(file_t* filePtr, client_fd_t clientFd, char sendContentBackToClient){
+    if( filePtr == NULL)
         return 0;
     char* tempContent = NULL;
-    if( file->prev == NULL ){
-        // this is the head of the list
-        fs.fileListHead = file->next;
-        if( fs.fileListHead != NULL)
-            (fs.fileListHead)->prev = NULL;
-    }else{
-        (file->prev)->next = file->next;
-        (file->next)->prev = file->prev;
-    }
-    icl_hash_delete(fs.hFileTable, file->path, NULL, NULL);
+    
+    // detach file from the storage
+    detachFileFromStorage(filePtr);
+
+    icl_hash_delete(fs.hFileTable, filePtr->path, NULL, NULL);
     fs.currFilesNumber--;
-    tempContent = destroyFile(file, 1);
+    fs.currSize -= filePtr->size;
+    tempContent = destroyFile(filePtr, 1);
     if( sendContentBackToClient ){
         if( sendContentToClient(clientFd, tempContent, REMOVED_FILE_CONTENT) == -1 ){
             free(tempContent);

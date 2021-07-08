@@ -13,6 +13,7 @@
 #define REMOVED_FILE_CONTENT "RFC"
 #define READ_FILE_CONTENT "RFF"
 #define NO_CONTENT_FILE "NCF"
+#define CONTENT_TOO_LARGE "CTL"
 
 /*Equality Check*/
 #define ec(s, r, c)         \
