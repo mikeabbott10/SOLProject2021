@@ -80,7 +80,7 @@ int getClientRequest(int clientFD, request_t* request){
         free(msgLenBuf);
         return -3;
     }
-    /*note that we trust our server*/
+    /*note that we trust our client*/
     if((bytesRead = readn(clientFD, msgBuf, msgLen)) <= 0){
         free(msgLenBuf);
         free(msgBuf);
@@ -100,7 +100,7 @@ int getClientRequest(int clientFD, request_t* request){
  * Parse the client request message
  * @param message: the string to parse
  * @param len: the message length
- * @param request: the pointer to the request "object" to set up
+ * @param request: the pointer to the request struct to set up
  * @return:
  *      -3 if no space for allocation (errno is setted up), 
  *      -2 if parsing error occurred,
@@ -167,10 +167,13 @@ int parseMessage(char* message, int len, request_t* request){
     /*content*/
     message+=9; /*first content char*/
     if(content_len != 0){
-        if( (request->content = strndup(message, content_len)) == NULL) 
-            return -3;
-    }else
+        ec( request->content = calloc(content_len+1, sizeof(char)), NULL, return -3 );
+        ec( memcpy(request->content, message, content_len), NULL, return -3 );
+        request->contentSize = content_len;
+    }else{
         request->content = NULL;
+        request->contentSize = 0;
+    }
 
     return 1;
 }
@@ -181,8 +184,8 @@ int parseMessage(char* message, int len, request_t* request){
  * @param msgPtr: the message representing the response for the client side
  * @return: 
  *      -1 if fatal error occurred (i.e. memory error) (errno is setted up)
- *      0 if logic error occurred (i.e. wrong file path...)
- *      1 if the action ends up successfully
+ *      1 if logic error occurred (i.e. wrong file path...)
+ *      0 if the action ends up successfully
  */ 
 int performActionAndGetResponse(request_t req, msg_t* msgPtr){
     switch(req.action){
@@ -209,10 +212,12 @@ int performActionAndGetResponse(request_t req, msg_t* msgPtr){
         }
 
         case WRITE:
-            return writeFile(msgPtr, req.client_fd, req.action_related_file_path, req.content);
+            return writeFile(msgPtr, req.client_fd, req.content, req.contentSize, 
+                    req.action_related_file_path );
 
         case APPEND:
-            return appendToFile(msgPtr, req.client_fd, req.action_related_file_path, req.content);
+            return appendToFile(msgPtr, req.client_fd, req.content, req.contentSize, 
+                    req.action_related_file_path);
 
         case LOCK:
             return lockFile(msgPtr, req.client_fd, req.action_related_file_path);
@@ -223,5 +228,5 @@ int performActionAndGetResponse(request_t req, msg_t* msgPtr){
         case REMOVE:
             return removeFile(msgPtr, req.client_fd, req.action_related_file_path);
     }
-    return 0;
+    return 1;
 }

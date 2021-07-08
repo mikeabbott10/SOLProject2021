@@ -13,14 +13,16 @@
 
 /**
  * Get server response(s)
+ * @param removing_the_file: this flag is set if the client did a removeFile request
  * @return
  *      0 if we got a fine response
  *      -1 otherwise (errno is setted up)
  */
-int getServerResponse(){
+int getServerResponse(char removing_the_file){
     char *response = NULL;
     int n;
     int retVal = -1;
+    errno = 0;
     while(1){
         n = getServerMessage(sockfd, &response);
         if(n!=1)
@@ -36,7 +38,10 @@ int getServerResponse(){
         }
 
         if(strncmp(response, LOCKED_FILE_REMOVED, 3)==0){
-            errno = ECANCELED; // Operation canceled (POSIX.1-2001)
+            if(removing_the_file)
+                retVal = 0; // operation successfully completed
+            else
+                errno = ECANCELED; // Operation canceled (POSIX.1-2001)
         }else if(strncmp(response, FINE_REQ_RESPONSE, 3)==0)
             retVal = 0;
         else if(strncmp(response, WRONG_FILEPATH_RESPONSE, 3)==0)
@@ -113,9 +118,8 @@ int openFile(const char* pathname, int flags){
         free(msg.content);
         return -1;
     }
-    puts("msg sent");
     free(msg.content);
-    return getServerResponse();
+    return getServerResponse(0);
 }
 
 /**
@@ -131,7 +135,7 @@ int closeFile(const char* pathname){
         return -1;
     }
     free(msg.content);
-    return getServerResponse();
+    return getServerResponse(0);
 }
 
 /**
@@ -146,7 +150,7 @@ int lockFile(const char* pathname){
         return -1;
     }
     free(msg.content);
-    return getServerResponse();
+    return getServerResponse(0);
 }
 
 /**
@@ -161,7 +165,7 @@ int unlockFile(const char* pathname){
         return -1;
     }
     free(msg.content);
-    return getServerResponse();
+    return getServerResponse(0);
 }
 
 /**
@@ -176,7 +180,7 @@ int removeFile(const char* pathname){
         return -1;
     }
     free(msg.content);
-    return getServerResponse();
+    return getServerResponse(1);
 }
 
 /*

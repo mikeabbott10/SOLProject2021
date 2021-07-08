@@ -1,6 +1,7 @@
 #if !defined(_SHARED_VALUES_UTIL_H)
 #define _SHARED_VALUES_UTIL_H
 #include <pthread.h>
+#include<general_utility.h>
 
 /* USAGE:
 //init synchronization struct for the shared value
@@ -37,26 +38,27 @@ SHARED_VALUE_WRITE(sharedStruct,
         }                                                               \
     }                                                                   \
         
-/* Read, unfair for readers */
-#define SHARED_VALUE_READ(s, c)                 \
-    startRead_fair_fifo(&s);                    \
+/* Read, fair non fifo policy */
+#define SHARED_VALUE_READ(s, c, errorProc)      \
+    ec( startRead_fair(&s), -1, errorProc );    \
     c                                           \
-    doneRead_fair_fifo(&s);                     \
+    ec( doneRead_fair(&s), -1, errorProc );     \
 
-/* Write, unfair for readers */
-#define SHARED_VALUE_WRITE(s, c)                \
-    startWrite_fair_fifo(&s);                   \
+/* Write, fair non fifo policy */
+#define SHARED_VALUE_WRITE(s, c, errorProc)     \
+    ec( startWrite_fair(&s), -1, errorProc );    \
     c                                           \
-    doneWrite_fair_fifo(&s);                    \
+    ec( doneWrite_fair(&s), -1, errorProc );     \
 
 // shared struct
 typedef struct{
     void* value;
     pthread_mutex_t mutex;
-    int activeWriters;
-    int activeReaders;
-    int waitingReaders;
-    int waitingWriters;
+    pthread_mutex_t order;
+    unsigned int activeWriters;
+    unsigned int activeReaders;
+    unsigned int waitingReaders;
+    unsigned int waitingWriters;
     pthread_cond_t writeGo;
     pthread_cond_t readGo;
 } SharedStruct;
@@ -64,19 +66,24 @@ typedef struct{
 int initSharedStructMuxNCondVar(SharedStruct*);
 void destroySharedStruct(SharedStruct*);
 
-void startRead_not_readers_fair(SharedStruct* );
-void doneRead_not_readers_fair(SharedStruct* );
-void startWrite_not_readers_fair(SharedStruct* );
-void doneWrite_not_readers_fair(SharedStruct* );
+int startRead_not_readers_fair(SharedStruct* );
+int doneRead_not_readers_fair(SharedStruct* );
+int startWrite_not_readers_fair(SharedStruct* );
+int doneWrite_not_readers_fair(SharedStruct* );
 
-void startRead_not_writers_fair(SharedStruct* );
-void doneRead_not_writers_fair(SharedStruct* );
-void startWrite_not_writers_fair(SharedStruct* );
-void doneWrite_not_writers_fair(SharedStruct* );
+int startRead_not_writers_fair(SharedStruct* );
+int doneRead_not_writers_fair(SharedStruct* );
+int startWrite_not_writers_fair(SharedStruct* );
+int doneWrite_not_writers_fair(SharedStruct* );
 
-void startRead_fair_fifo(SharedStruct *);
-void doneRead_fair_fifo(SharedStruct *);
-void startWrite_fair_fifo(SharedStruct *);
-void doneWrite_fair_fifo(SharedStruct *);
+int startRead_fair(SharedStruct *);
+int doneRead_fair(SharedStruct *);
+int startWrite_fair(SharedStruct *);
+int doneWrite_fair(SharedStruct *);
+
+int startRead_fair_fifo(SharedStruct *);
+int doneRead_fair_fifo(SharedStruct *);
+int startWrite_fair_fifo(SharedStruct *);
+int doneWrite_fair_fifo(SharedStruct *);
 
 #endif

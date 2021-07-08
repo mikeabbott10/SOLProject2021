@@ -37,11 +37,22 @@ int main(int argc, char **argv){
     /*first operation*/
     openConnection(ml.f_socketpath, ml.t_time, spec);
     
-    ec_n( openFile("/file/path(14)", O_CREATE), 0, );
-    ec_n( openFile("/file/path2(15)", O_CREATE|O_LOCK), 0, );
-    //ec_n( lockFile("/file/path(14)"), 0, );
-    //ec_n( unlockFile("/file/path(14)"), 0, );
-    //ec_n( removeFile("/file/path(14)"), 0, );
+    ec_n( openFile("/file/path(14)", O_CREATE), 10, );
+    printf("\n\n");
+    ec_n( openFile("/file/path2(15)", O_CREATE|O_LOCK), 10, );
+    printf("\n\n");
+    ec_n( removeFile("/file/path(14)"), 10, );
+    printf("\n\n");
+    ec_n( lockFile("/file/path(14)"), 10, );
+    printf("\n\n");
+    ec_n( removeFile("/file/path(14)"), 10, );
+    printf("\n\n");
+    ec_n( unlockFile("/file/path(14)"), 10, );
+    printf("\n\n");
+    ec_n( removeFile("/file/path(14)"), 10, );
+    printf("\n\n");
+    ec_n( removeFile("/file/path2(15)"), 10, );
+    printf("\n\n");
 
     closeConnection(ml.f_socketpath);
     

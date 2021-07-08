@@ -121,6 +121,10 @@ void* workers_fun(void* p){
             // write shared value
             SHARED_VALUE_WRITE(currentClientConnections,
                 (*((int*) currentClientConnections.value))--;
+                ,
+                // fatal error occurred
+                pthread_kill(sig_handler_tid, SIGINT);
+                break;
             );
             continue;
         }else if(connStatus == -1){
@@ -128,6 +132,10 @@ void* workers_fun(void* p){
             // write shared value
             SHARED_VALUE_WRITE(currentClientConnections,
                 (*((int*) currentClientConnections.value))--;
+                ,
+                // fatal error occurred
+                pthread_kill(sig_handler_tid, SIGINT);
+                break;
             );
             continue;
         }else if(connStatus == -3){
@@ -139,8 +147,9 @@ void* workers_fun(void* p){
         }
 
         /*we got a request*/
-        printf("action: %d,  action_flags: %d,  file_path: %s,  content: %s\n", 
-            request.action, request.action_flags, request.action_related_file_path, request.content);
+        printf("action: %d,  action_flags: %d,  file_path: %s,  , contentSize: %d, content: %s\n", 
+                request.action, request.action_flags, request.action_related_file_path, 
+                request.contentSize, request.content);
         
         buildMsg(&msg, NULL); // init the message
         if( performActionAndGetResponse(request, &msg) == -1){
@@ -230,6 +239,10 @@ void * master_fun(void* p){
         SHARED_VALUE_READ(currentClientConnections,
             if(quit_level == SOFT_QUIT && *((int*) currentClientConnections.value ) == 0)
                 break;
+            ,
+            // on fatal error
+            pthread_kill(sig_handler_tid, SIGINT);
+            break;
         );
     	tmpset = set;
         ec( select(fdmax+1, &tmpset, NULL, NULL, NULL), -1, 
@@ -247,6 +260,10 @@ void * master_fun(void* p){
                     // write shared value
                     SHARED_VALUE_WRITE(currentClientConnections,
                         (*((int*) currentClientConnections.value))++;
+                        ,
+                        // fatal error occurred
+                        pthread_kill(sig_handler_tid, SIGINT);
+                        break;
                     );
 
                     FD_SET(connfd, &set);  /* fd added to the master set*/

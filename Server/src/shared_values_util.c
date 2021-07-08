@@ -16,6 +16,7 @@
  */
 int initSharedStructMuxNCondVar(SharedStruct* s){
     if( pthread_mutex_init(&(s->mutex), NULL) != 0 ||
+            pthread_mutex_init(&(s->order), NULL) != 0 ||
             pthread_cond_init(&(s->writeGo), NULL) != 0 ||
             pthread_cond_init(&(s->readGo), NULL) != 0 )
         return -1;
@@ -30,13 +31,14 @@ void destroySharedStruct(SharedStruct* s){
     pthread_cond_destroy(&(s->writeGo));
     pthread_cond_destroy(&(s->readGo));
     pthread_mutex_destroy(&(s->mutex));
+    pthread_mutex_destroy(&(s->order));
 }
 
 /*----------- Not fair for readers solution ---------------------------------------------------------*/
 #pragma region
 
-void startRead_not_readers_fair(SharedStruct* s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int startRead_not_readers_fair(SharedStruct* s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     //printf("\t Thread: %ld in coda\n", syscall(__NR_gettid));
     s->waitingReaders++;
     while(s->activeWriters > 0 || s->waitingWriters > 0){
@@ -45,19 +47,21 @@ void startRead_not_readers_fair(SharedStruct* s){
     s->waitingReaders++;
     s->activeReaders++;
     //printf("\t Thread: %ld uscito dalla coda\n", syscall(__NR_gettid));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
-void doneRead_not_readers_fair(SharedStruct* s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int doneRead_not_readers_fair(SharedStruct* s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     s->activeReaders--;
     if(s->activeReaders==0 && s->waitingWriters > 0)
         pthread_cond_signal(&(s->writeGo));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
-void startWrite_not_readers_fair(SharedStruct* s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int startWrite_not_readers_fair(SharedStruct* s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     s->waitingWriters++;
     //printf("\t Thread: %ld in coda\n", syscall(__NR_gettid));
     if(s->activeReaders > 0 || s->activeWriters > 0){
@@ -66,25 +70,27 @@ void startWrite_not_readers_fair(SharedStruct* s){
     s->waitingWriters--;
     s->activeWriters++;
     //printf("\t Thread: %ld uscito dalla coda\n", syscall(__NR_gettid));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
-void doneWrite_not_readers_fair(SharedStruct* s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int doneWrite_not_readers_fair(SharedStruct* s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     s->activeWriters--;
     if(s->waitingWriters > 0)
         pthread_cond_signal(&(s->writeGo));
     else
         pthread_cond_broadcast(&(s->readGo));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 #pragma endregion
 
 /*----------- Not fair for writers solution ---------------------------------------------------------*/
 #pragma region
 
-void startRead_not_writers_fair(SharedStruct* s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int startRead_not_writers_fair(SharedStruct* s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     //printf("\t Thread: %ld in coda\n", syscall(__NR_gettid));
     s->waitingReaders++;
     while(s->activeWriters > 0){
@@ -93,19 +99,21 @@ void startRead_not_writers_fair(SharedStruct* s){
     s->waitingReaders++;
     s->activeReaders++;
     //printf("\t Thread: %ld uscito dalla coda\n", syscall(__NR_gettid));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 );
+    return 0;
 }
 
-void doneRead_not_writers_fair(SharedStruct* s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int doneRead_not_writers_fair(SharedStruct* s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     s->activeReaders--;
     if(s->activeReaders==0 && s->waitingWriters > 0)
         pthread_cond_signal(&(s->writeGo));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
-void startWrite_not_writers_fair(SharedStruct* s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int startWrite_not_writers_fair(SharedStruct* s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     s->waitingWriters++;
     //printf("\t Thread: %ld in coda\n", syscall(__NR_gettid));
     if(s->activeReaders > 0 || s->activeWriters > 0){
@@ -114,18 +122,66 @@ void startWrite_not_writers_fair(SharedStruct* s){
     s->waitingWriters--;
     s->activeWriters++;
     //printf("\t Thread: %ld uscito dalla coda\n", syscall(__NR_gettid));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
-void doneWrite_not_writers_fair(SharedStruct* s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int doneWrite_not_writers_fair(SharedStruct* s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     s->activeWriters--;
     if(s->waitingReaders > 0)
         pthread_cond_broadcast(&(s->readGo));
     else
         pthread_cond_signal(&(s->writeGo));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
+#pragma endregion
+
+/*----------- Fair solution, non FIFO policy --------------------------------------------------------*/
+#pragma region
+
+// we only need one condition variable here. Let's use writeGo
+
+int startRead_fair(SharedStruct *s){
+    ec( safe_mutex_lock(&(s->order)), 1, return -1 );
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
+    while(s->activeWriters > 0)
+        pthread_cond_wait(&(s->writeGo), &(s->mutex));
+    s->activeReaders++;
+    ec( safe_mutex_unlock(&(s->order)), 1, return -1 );
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 );
+    return 0;
+}
+
+int doneRead_fair(SharedStruct *s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
+    s->activeReaders--;
+    if( s->activeReaders == 0 )
+        pthread_cond_signal(&(s->writeGo));
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 );
+    return 0;
+}
+
+int startWrite_fair(SharedStruct *s){
+    ec( safe_mutex_lock(&(s->order)), 1, return -1 );
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
+    while(s->activeWriters > 0 || s->activeReaders > 0)
+        pthread_cond_wait(&(s->writeGo), &(s->mutex));
+    s->activeWriters++;
+    ec( safe_mutex_unlock(&(s->order)), 1, return -1 );
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 );
+    return 0;
+}
+
+int doneWrite_fair(SharedStruct *s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
+    s->activeWriters--;
+    pthread_cond_signal(&(s->writeGo));
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 );
+    return 0;
+}
+
 #pragma endregion
 
 /*----------- Fair solution, FIFO access policy -----------------------------------------------------*/
@@ -177,8 +233,8 @@ char is_empty(Node *lPtr){
 
 Node* waiting = NULL;
 
-void startRead_fair_fifo(SharedStruct *s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int startRead_fair_fifo(SharedStruct *s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     //printf("\t Thread: %ld in coda\n", syscall(__NR_gettid));
     if(s->activeWriters > 0){
         pthread_cond_t self;
@@ -192,20 +248,22 @@ void startRead_fair_fifo(SharedStruct *s){
     }
     s->activeReaders++;
     //printf("\t Thread: %ld uscito dalla coda\n", syscall(__NR_gettid));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
-void doneRead_fair_fifo(SharedStruct *s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int doneRead_fair_fifo(SharedStruct *s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     s->activeReaders--;
     if(s->activeReaders==0)
         if(!is_empty(waiting))
             pthread_cond_signal((pthread_cond_t *)(waiting->item)); // signal to the first one
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
-void startWrite_fair_fifo(SharedStruct *s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int startWrite_fair_fifo(SharedStruct *s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     //printf("\t Thread: %ld in coda\n", syscall(__NR_gettid));
     if(s->activeReaders > 0 || s->activeWriters > 0){
         pthread_cond_t self;
@@ -219,15 +277,17 @@ void startWrite_fair_fifo(SharedStruct *s){
     }
     s->activeWriters++;
     //printf("\t Thread: %ld uscito dalla coda\n", syscall(__NR_gettid));
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
-void doneWrite_fair_fifo(SharedStruct *s){
-    pthread_mutex_lock(&(s->mutex)); // mutex.Acquire()
+int doneWrite_fair_fifo(SharedStruct *s){
+    ec( safe_mutex_lock(&(s->mutex)), 1, return -1 );
     s->activeWriters--;
     if(!is_empty(waiting))
         pthread_cond_signal((pthread_cond_t *)(waiting->item)); // signal to the first one
-    pthread_mutex_unlock(&(s->mutex)); // mutex.Release()
+    ec( safe_mutex_unlock(&(s->mutex)), 1, return -1 ); // mutex.Release()
+    return 0;
 }
 
 #pragma endregion

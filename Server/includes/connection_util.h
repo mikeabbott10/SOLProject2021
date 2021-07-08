@@ -19,6 +19,7 @@ typedef struct{
     char action_flags; /*NO_FLAGS, O_CREATE, O_LOCK*/
     char* action_related_file_path; /*the file path the client wants to perform an action on*/
     char* content; /*the content of the file, if needed*/
+    int contentSize;
 } request_t;
 
 /*used buffers*/

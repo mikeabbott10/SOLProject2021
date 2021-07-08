@@ -108,8 +108,8 @@ int openFile(msg_t*, client_fd_t, char, char*);
 int closeFile(msg_t*, client_fd_t, char*);
 int readFile(msg_t*, client_fd_t, char*);
 int readNFiles(msg_t*, client_fd_t, int);
-int writeFile(msg_t*, client_fd_t, char*, char*);
-int appendToFile(msg_t*, client_fd_t, char*, char*);
+int writeFile(msg_t*, client_fd_t, char*, int, char*);
+int appendToFile(msg_t*, client_fd_t, char*, int, char*);
 int lockFile(msg_t*, client_fd_t, char*);
 int unlockFile(msg_t*, client_fd_t, char*);
 int removeFile(msg_t*, client_fd_t, char*); 
@@ -117,6 +117,7 @@ int removeFile(msg_t*, client_fd_t, char*);
 /*----------- Backend --------------------------------------------------------------------------*/
 int initFileSystem(size_t, size_t, char);
 void destroyFileSystem();
+int getFsFileToTail(file_t*);
 int insertFile(file_t*, char, client_fd_t);
 int evictFiles(int, int, client_fd_t);
 int deleteFile(file_t*, client_fd_t, char);
