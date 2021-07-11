@@ -7,7 +7,6 @@
 #include <time.h>
 #include<math.h>
 
-
 /**
  * Checks if the evaluation of s is an integer and puts the value in n.
  * @param s: char* to evaluate
@@ -27,6 +26,35 @@ char isInteger(const char* s, int* n){
     if (errno==0 && e != NULL && e != s){
         *n = (int) val;
         // è un numero valido
+        return 0;
+    }
+
+    // non è un numero
+    return 1;
+}
+
+/**
+ * Checks if the evaluation of s is a size_t and puts the value in n.
+ * @param s: char* to evaluate
+ * @param n: size_t* the evaluated value of s goes to
+ * @return 0 if s is a size_t, 2 overflow or underflow detected, 1 if s is not a size_t
+ */
+char isSizeT(const char* s, size_t* n){
+    char *e = NULL;
+    errno = 0;
+    long val = strtol(s, &e, 10);
+
+    if (errno == ERANGE){
+        // overflow/underflow
+        return 2;
+    }
+
+    if(val < 0)
+        return 1;
+
+    if (errno==0 && e != NULL && e != s){
+        *n = (size_t) val;
+        // è un size_t valido
         return 0;
     }
 
@@ -65,7 +93,7 @@ int max(int args, ...){
  * @return the string or NULL
  */ 
 char* intToStr(int n, int strLen){
-    if(n<0 || n>pow(10,strLen)){
+    if(n<0 || n>=pow(10,strLen)){
         //puts("intToStr: n not valid for conversion");
         errno = EINVAL;
         return NULL;
@@ -94,6 +122,8 @@ uint64_t get_now_time() {
  * @param msec: how many milliseconds we sleep for
 */
 void msleep(long msec){
+    if(msec==0)
+        return;
     struct timespec ts;
 
     if (msec < 0){
@@ -105,4 +135,56 @@ void msleep(long msec){
     ts.tv_nsec = (msec % 1000) * 1000000;
 
     nanosleep(&ts, NULL);
+}
+
+//---------- FILE UTILS --------------------------------------------------
+
+
+DIR * openAndCD(char * path){
+    ec(chdir(path), -1, return NULL); // mi sposto nella cartella
+    DIR *newdir = opendir(".");
+    ec(newdir, NULL, return NULL);
+    return newdir;
+} 
+
+int getAbsolutePath(const char *path, char **absPathPtr){
+    if (!path)
+        return -1;
+    if ( (*path) == '/' ){
+        ec( *absPathPtr = strdup(path), NULL, return -1 );
+        return 0;
+    }
+    char cwd[MAX_PATH_LEN];
+    ec( getcwd(cwd, MAX_PATH_LEN), NULL, return -1);
+    ec(*absPathPtr = calloc(strlen(path) + strlen(cwd) + 2, sizeof(char)), NULL, return -1);
+    if( snprintf(*absPathPtr, MAX_PATH_LEN, "%s/%s", cwd, path) < 0 )
+        return -1;
+    return 0;
+}
+
+/**
+ * @return 
+ *      1 fatal error
+ *      0 success
+ */
+int getFilePath(char** dirPath, char* fileName){
+    size_t dirPathLen = strlen(*dirPath);
+    size_t filePathLen = strlen(fileName);
+    ec( *dirPath = realloc(*dirPath, dirPathLen+filePathLen+1), NULL, return 1);
+    memmove((*dirPath)+dirPathLen, fileName, filePathLen+1); // move the '\0' too
+    return 0;
+}
+
+int writeLocalFile(char* filePath, char* content, int contentSize){
+    FILE* fdo = fopen(filePath, "w");
+    ec( fdo, NULL, return -1; );
+    ec( fwrite(content, sizeof(char), contentSize, fdo), -1, 
+        ec(fclose(fdo), -1, return -1); return -1;
+    );
+    // user space buffer flush
+    ec(fflush(fdo), -1, return -1); 
+    // kernel space buffer flush
+    ec(fsync(fileno(fdo)), -1, return -1);
+    ec(fclose(fdo), -1, return -1);
+    return 0;
 }

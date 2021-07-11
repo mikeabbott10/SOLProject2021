@@ -1,10 +1,9 @@
 #if !defined(_FILESYSTEM_UTIL_H)
 #define _FILESYSTEM_UTIL_H
-#define _POSIX_C_SOURCE 200809L
+#include<general_utility.h>
 #include<errno.h>
 #include <pthread.h>
 #include <icl_hash.h>
-#include<general_utility.h>
 
 #define FIFO 0x00 /*if modified, please edit the config file range for eviction_policy*/
 #define LRU 0x01
@@ -52,12 +51,12 @@
         ec_n( CV_SIGNAL(filePtr->Go), 0, errorProc );               \
     ec( SAFE_UNLOCK(filePtr->mux), 1, errorProc );                  \
 
-#define LOCK_FS_SEARCH_FILE(clientFd, filePtr, path, not_found_p, found_p)  \
-    ec( SAFE_LOCK(fs.mux), 1, return -1 );                                  \
-    printf("fd locked the storage: %d\n", clientFd);                        \
-    filePtr = searchFile(path);                                             \
-    if(filePtr == NULL){ not_found_p }                                      \
-    else{ found_p }                                                         \
+#define LOCK_FS_SEARCH_FILE(lockFs, clientFd, filePtr, path, not_found_p, found_p)  \
+    if(lockFs) ec( SAFE_LOCK(fs.mux), 1, return -1 );                               \
+    /*printf("fd locked the storage: %d\n", clientFd);*/                                \
+    filePtr = searchFile(path);                                                     \
+    if(filePtr == NULL){ not_found_p }                                              \
+    else{ found_p }                                                                 \
 
 /*file abstraction*/
 typedef struct file{
@@ -106,7 +105,7 @@ FileSystem fs;
 /*----------- Middleware -----------------------------------------------------------------------*/
 int openFile(msg_t*, client_fd_t, char, char*);
 int closeFile(msg_t*, client_fd_t, char*);
-int readFile(msg_t*, client_fd_t, char*);
+int readFile(msg_t*, client_fd_t, char*, char);
 int readNFiles(msg_t*, client_fd_t, int);
 int writeFile(msg_t*, client_fd_t, char*, int, char*);
 int appendToFile(msg_t*, client_fd_t, char*, int, char*);

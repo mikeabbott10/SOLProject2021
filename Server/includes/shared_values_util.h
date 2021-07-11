@@ -1,7 +1,7 @@
 #if !defined(_SHARED_VALUES_UTIL_H)
 #define _SHARED_VALUES_UTIL_H
-#include <pthread.h>
 #include<general_utility.h>
+#include <pthread.h>
 
 /* USAGE:
 //init synchronization struct for the shared value

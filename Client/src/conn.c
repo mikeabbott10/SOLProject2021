@@ -65,7 +65,7 @@ int getServerMessage(int socketFD, char **msg){
         free(msgLenBuf);
         return bytesRead; /* return -1 or 0 */
     }
-    printf("Len:\n%s\n", msgLenBuf);
+    //printf("Len:\n%s\n", msgLenBuf);
     if( isInteger(msgLenBuf, &msgLen) != 0){
         free(msgLenBuf);
         errno = EPROTO; // Protocol error (POSIX.1-2001).
@@ -82,7 +82,7 @@ int getServerMessage(int socketFD, char **msg){
         free(msgBuf);
         return bytesRead; /* return -1 or 0 */
     }
-    printf("Msg:\n%s\n", msgBuf);
+    //printf("Msg:\n%s\n", msgBuf);
     
     free(msgLenBuf);
     *msg = msgBuf;
@@ -97,6 +97,11 @@ int getServerMessage(int socketFD, char **msg){
  * @return -1 if error occurred (errno is setted up), 0 if write returns 0, 1 if it ends up successfully
  */
 int sendTo(int fd, char* content, int length){
+    if(content == NULL){
+        errno = EINVAL; // Invalid argument (POSIX.1-2001).
+        return -1;
+    }
+    
     msg_t msg;
     msg.len = length;
     char *msgLenAsString;
@@ -167,22 +172,22 @@ msg_t buildMessage(char req, char flags, const char* filePath, char* content, in
     }
     /*filePath length*/
     char *filePathLengthAsString;
-    int pathLength = strlen(filePath);
-    if( (filePathLengthAsString = intToStr(pathLength, 9)) == NULL){
+    int pathLength = (filePath ? strlen(filePath) : 0);
+    if( (filePathLengthAsString = intToStr(pathLength, MSG_LEN_LENGTH)) == NULL){
         free(flagsAsString);
         free(reqAsString);
         return getNullMessage(&msg);
     }
     /*content length*/
     char *contentLengthAsString;
-    if( (contentLengthAsString = intToStr(contentLength, 9)) == NULL){
+    if( (contentLengthAsString = intToStr(contentLength, MSG_LEN_LENGTH)) == NULL){
         free(filePathLengthAsString);
         free(flagsAsString);
         free(reqAsString);
         return getNullMessage(&msg);
     }
 
-    if( (msg.content = calloc(4 + 4 + 9 + pathLength + 9 + contentLength + 1, sizeof(char))) == NULL ){
+    if( (msg.content = calloc(4 + 4 + MSG_LEN_LENGTH + pathLength + MSG_LEN_LENGTH + contentLength + 1, sizeof(char))) == NULL ){
         free(contentLengthAsString);
         free(filePathLengthAsString);
         free(flagsAsString);
@@ -194,12 +199,13 @@ msg_t buildMessage(char req, char flags, const char* filePath, char* content, in
     msg.len = 4;
     memmove(msg.content + msg.len, flagsAsString, 4);
     msg.len += 4;
-    memmove(msg.content + msg.len, filePathLengthAsString, 9);
-    msg.len += 9;
-    memmove(msg.content + msg.len, filePath, pathLength);
+    memmove(msg.content + msg.len, filePathLengthAsString, MSG_LEN_LENGTH);
+    msg.len += MSG_LEN_LENGTH;
+    if(pathLength != 0)
+        memmove(msg.content + msg.len, filePath, pathLength);
     msg.len += pathLength;
-    memmove(msg.content + msg.len, contentLengthAsString, 9);
-    msg.len += 9;
+    memmove(msg.content + msg.len, contentLengthAsString, MSG_LEN_LENGTH);
+    msg.len += MSG_LEN_LENGTH;
     if(contentLength != 0)
         memmove(msg.content + msg.len, content, contentLength);
     msg.len += contentLength;

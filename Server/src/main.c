@@ -1,4 +1,4 @@
-#define _GNU_SOURCE
+//#define _GNU_SOURCE
 #include<server_config.h>
 #include<general_utility.h>
 #include<connection_util.h>
@@ -147,9 +147,9 @@ void* workers_fun(void* p){
         }
 
         /*we got a request*/
-        printf("action: %d,  action_flags: %d,  file_path: %s,  , contentSize: %d, content: %s\n", 
+        printf("action: %d,  action_flags: %d,  file_path: %s,  , contentSize: %d, content: %d\n", 
                 request.action, request.action_flags, request.action_related_file_path, 
-                request.contentSize, request.content);
+                request.contentSize, request.content != NULL);
         
         buildMsg(&msg, NULL); // init the message
         if( performActionAndGetResponse(request, &msg) == -1){
@@ -171,6 +171,7 @@ void* workers_fun(void* p){
             /*no message for the client OR client closed connection while server was writing to it*/
             free(request.action_related_file_path);
             free(request.content);
+            free(msg.content);
             // get this client fd back to the master
             if( write(pipefd[1], &clientFD, sizeof(clientFD)) == -1 ){
                 pthread_kill(sig_handler_tid, SIGINT);

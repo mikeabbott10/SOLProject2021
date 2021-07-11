@@ -80,8 +80,8 @@ int parseCmdLine(int argc, char**argv, mainList_t *ml){
                     return EXIT_FAILURE;
                 }
                 if(optarg!=NULL){
-                    if( isInteger(optarg, &(ml->t_time)) != 0 ){
-                        fprintf(stderr, "-t option requires an integer.\n");
+                    if( isInteger(optarg, &(ml->t_time)) != 0  || ml->t_time < 0){
+                        fprintf(stderr, "-t option requires a non negative integer.\n");
                         print_usage(argv[0]);
                         return EXIT_FAILURE;
                     }
@@ -104,14 +104,17 @@ int parseCmdLine(int argc, char**argv, mainList_t *ml){
                     strcpy(bkp, optarg);
                     item = strtok_r(bkp, ",", &save);
 
-                    ec( ml->w_dirname = malloc(strlen(item)+1), NULL, return EXIT_FAILURE );
+                    ec( ml->w_dirname = calloc(strlen(item)+1, sizeof(char)), NULL, 
+                        return EXIT_FAILURE 
+                    );
                     strcpy(ml->w_dirname, item);
 
                     item = strtok_r(NULL, ",", &save);
-                    if(isInteger(item, &(ml->w_n)) != 0){
-                            fprintf(stderr, "-w option requires a path and (optionally) an integer.\n");
-                            print_usage(argv[0]);
-                            return EXIT_FAILURE;
+                    if(isInteger(item, &(ml->w_n)) != 0 || ml->w_n < 0){
+                        fprintf(stderr, "-w option requires a path and (optionally) a non negative integer.\n");
+                        print_usage(argv[0]);
+                        free(bkp);
+                        return EXIT_FAILURE;
                     }
                     free(bkp);
                     break;

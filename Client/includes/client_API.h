@@ -20,6 +20,8 @@
 int sockfd;
 char* sockPath = NULL;
 
+char stdout_print; // print info on stdout
+
 int openConnection(const char*, int, const struct timespec);
 int closeConnection(const char*);
 int openFile(const char*, int);

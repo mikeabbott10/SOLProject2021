@@ -16,11 +16,11 @@ acquire globale - cerca file - operazione - release globale
 /*----------- Util --------------------------------------------------------------------------------*/
 /* Print the storage*/
 void printFs(){
-    file_t* currNode = fs.fileListHead;
+    /*file_t* currNode = fs.fileListHead;
     while(currNode != NULL){
-        printf("%s\n %s\n\n", currNode->path, currNode->content);
+        printf("%s\n %d\n", currNode->path, currNode->content != NULL);
         currNode = currNode->next;
-    }
+    }*/
 }
 /**
  * Look for the file at path
@@ -81,8 +81,8 @@ void freeClientsList(client_t* list, char warnClients){
  *      0 if client was removed
  *      1 if client not in list
  */
-int removeClientFromList(client_fd_t clientFD, client_t* list){
-    client_t* currNode = list;
+int removeClientFromList(client_fd_t clientFD, client_t** list){
+    client_t* currNode = *list;
     client_t* prevNode = NULL;
     while(currNode != NULL){
         if(clientFD == currNode->client_fd)
@@ -91,8 +91,14 @@ int removeClientFromList(client_fd_t clientFD, client_t* list){
         currNode = currNode->next;
     }
     if(currNode != NULL){
+        //printf("\t\tclient: %d\n", currNode->client_fd);
         // the client's in list
-        prevNode->next = currNode->next;
+        if(prevNode == NULL){
+            // currNode is the head of the list
+            *list = currNode->next;
+        }else{
+            prevNode->next = currNode->next;
+        }
         free(currNode);
         return 0;
     }
@@ -178,9 +184,13 @@ int sendContentToClient(client_fd_t clientFd, char* content, int contentLength, 
         return 0;
     //printf("content:%s", content);
     char* str;
-    int newLen = strlen(TAG)+ contentLength;
+    int newLen = strlen(TAG) + MSG_LEN_LENGTH + contentLength;
+    char* contentLenAsString;
+    if( (contentLenAsString = intToStr(contentLength, MSG_LEN_LENGTH)) == NULL)
+        return -1;
     ec( str = calloc(newLen + 1, sizeof(char)), NULL, return -1 );
-    if( memcpy(str, TAG, 3) == NULL || memcpy(str+3, content, contentLength) == NULL ){
+    if( memcpy(str, TAG, 3) == NULL || memcpy(str+3, contentLenAsString, MSG_LEN_LENGTH) == NULL ||
+            memcpy(str+3+MSG_LEN_LENGTH, content, contentLength) == NULL ){
         free(str);
         return -1;
     }
@@ -198,10 +208,14 @@ int sendContentToClient(client_fd_t clientFd, char* content, int contentLength, 
  *      0 otherwise
  */
 int appendContentToFile(file_t* filePtr, char* content, int contentSize){
-    ec( filePtr->content = realloc(filePtr->content, (filePtr->size + contentSize + 1)*sizeof(char)), 
+    size_t newLen = filePtr->size + contentSize;
+    ec( filePtr->content = realloc(filePtr->content, (newLen + 1)*sizeof(char)), 
         NULL, return -1
     );
+    memset(filePtr->content + newLen, 0, 1);
     memcpy(filePtr->content + filePtr->size, content, contentSize);
+    filePtr->size = newLen;
+    
     return 0;
 }
 
@@ -222,7 +236,7 @@ int appendContentToFile(file_t* filePtr, char* content, int contentSize){
  */ 
 int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         if( !(flags & O_CREATE) ){
             // O_CREATE is not part of the flags
@@ -254,8 +268,7 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             return 1;
         }
 
-        puts("file doesn't exist");
-        printFs();
+        puts("file doesn't exist"); printFs();
 
         // the new file has been successfully inserted
         START_WRITE(file, fs, 1, return -1);
@@ -263,12 +276,21 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
         if( flags & O_LOCK ){
             // O_LOCK has been specified
             // let's make the new file locked by client_fd
-            ec( clientListTailInsertion(&(file->locked_by), client_fd), -1, return -1 );
+            ec( clientListTailInsertion(&(file->locked_by), client_fd), -1, 
+                DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+                return -1 
+            );
 
             // this client is the one who can write on this new file
             file->writeOwner = client_fd;
         }
-
+        
+        // let's make the new file opened by client_fd
+        ec( clientListTailInsertion(&(file->opened_by), client_fd), -1, 
+            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+            return -1 
+        );
+        
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
         if( flags & O_CREATE ){
             // O_CREATE has been specified
@@ -277,23 +299,42 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             return 1;
         }
 
-        puts("file exists");
-        printFs();
+        puts("file exists"); printFs();
 
         if(fs.eviction_policy == LRU)
             getFsFileToTail(file);
 
         // the new file exists
         START_WRITE(file, fs, 1, return -1);
+        // is the file locked by someone else?
+        if( file->locked_by != NULL && (file->locked_by)->client_fd != client_fd ){
+            // file is locked by someone else, operation not permitted
+            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            return 0;
+        }
 
-        if( flags & O_LOCK ){
-            // let's make it locked by client_fd
-            ec( clientListTailInsertion(&(file->locked_by), client_fd), -1, return -1 );
+        // file's locked by no one or locked by the same client who did the request
+        // NOTE: we assume a client can lock the file even if he's already a locker
+        if( file->locked_by == NULL ){
+            if( flags & O_LOCK ){
+                // let's make it locked by client_fd
+                ec( clientListTailInsertion(&(file->locked_by), client_fd), -1, 
+                    DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+                    return -1 
+                );
+            }
+        }
+
+        // NOTE: we assume a client can open the file even if he's already an opener
+        if( searchClientInList(client_fd, file->opened_by)!=0 ){
+            // let's make it opened by client_fd
+            ec( clientListTailInsertion(&(file->opened_by), client_fd), -1, 
+                DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+                return -1 
+            );
         }
     );
-
-    // let's make the new file opened by client_fd
-    ec( clientListTailInsertion(&(file->opened_by), client_fd), -1, return -1 );
 
     DONE_WRITE(file, fs, 
         file->writeOwner = (flags & O_LOCK && flags & O_CREATE) ? client_fd : -1;, 
@@ -316,7 +357,7 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
  */ 
 int closeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -324,19 +365,34 @@ int closeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
         START_WRITE( file, fs, 1, return -1 );
 
+        // is the file locked by someone else?
+        if( file->locked_by != NULL && (file->locked_by)->client_fd != client_fd ){
+            // file is locked by someone else, operation not permitted
+            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            return 0;
+        }
+
+        // file's locked by no one or locked by the same client who did the request
+
         // update the writeOwner
         file->writeOwner = -1;
 
         // does client_fd previously opened the file?
-        if( removeClientFromList(client_fd, file->opened_by) == 0 ){
-            // a client was removed
-            ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
+        if( removeClientFromList(client_fd, &(file->opened_by)) == 0 ){
+            // client was removed
+            ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, 
+                DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+                return -1 
+            );
         }else{
             // client not in list
-            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, 
+                DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+                return -1 
+            );
         }
-
-        DONE_WRITE(file, fs, , return -1);
+        DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
     );
     return 0;
 }
@@ -346,41 +402,71 @@ int closeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
  * @param msgPtr: the message we shall send back to the client
  * @param client_fd: the client
  * @param file_path: the path of the file to read
+ * @param isReadN: flag for readN requests
  * @return 
  *      -1 if fatal error occurred
- *      1 if logical error occurred (i.e. reading an unopened file)
+ *      1 if logical error occurred (i.e. reading an unopened file while isReadN==0)
  *      0 otherwise
  */ 
-int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
+int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path, char isReadN){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(!isReadN, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
         return 1;
+
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
         if(fs.eviction_policy == LRU)
             getFsFileToTail(file);
 
-        START_READ( file, fs, 1, return -1 );
+        START_READ( file, fs, !isReadN, return -1 );
 
-        // is the file locked by someone else? OR is the client opened by client_fd?
-        if( (file->locked_by != NULL && (file->locked_by)->client_fd != client_fd) || 
-                searchClientInList(client_fd, file->opened_by)!=0 ){
+        // is the file locked by someone else?
+        if( (file->locked_by != NULL && (file->locked_by)->client_fd != client_fd)){
             // file is locked by someone else
             ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
             return 1;
         }
-        // the client previously opened the file and is, maybe, the locker
+
+        // if the file is not opened by the client AND this is not a readN request
+        if( searchClientInList(client_fd, file->opened_by)!=0 && !isReadN ){
+            // client is not an opener 
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+            return 1;
+        }
+
+        // the client previously opened the file and is, maybe, the locker OR this is a readN request
         
         if(file->content == NULL){
             ec( buildMsg(msgPtr, NO_CONTENT_FILE ), -1, return -1 );
+            if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
             return 1;
         }
+        char* str;
+        int newLen = strlen(READ_FILE_CONTENT) + MSG_LEN_LENGTH + file->size;
+        char* contentLenAsString;
+        if( (contentLenAsString = intToStr(file->size, MSG_LEN_LENGTH)) == NULL){
+            if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+            return -1;
+        }
+        ec( str = calloc(newLen + 1, sizeof(char)), NULL, return -1 );
 
-        sendContentToClient(client_fd, file->content, file->size, READ_FILE_CONTENT);
-        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
+        if( memcpy(str, READ_FILE_CONTENT, 3) == NULL || 
+                memcpy(str+3, contentLenAsString, MSG_LEN_LENGTH) == NULL ||
+                memcpy(str+3+MSG_LEN_LENGTH, file->content, file->size) == NULL ){
+            free(contentLenAsString);
+            free(str);
+            if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+            return -1;
+        }
 
+        free(contentLenAsString);
+        msgPtr->content = str;
+        msgPtr->len = newLen;
+        //printf("len:%d\ncontent:%s\n", msgPtr->len, msgPtr->content);
         DONE_READ(file, fs, file->writeOwner = -1;, return -1);
     );
     return 0;
@@ -398,7 +484,49 @@ int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
  *      0 otherwise
  */ 
 int readNFiles(msg_t* msgPtr, client_fd_t client_fd, int N){
-    return 1;
+    ec( SAFE_LOCK(fs.mux), 1, return -1 );
+    if(N <= 0 || N > fs.currFilesNumber )
+        N = fs.currFilesNumber;
+    ec( buildMsg(msgPtr, NULL ), -1, ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 );
+    file_t *currFile = fs.fileListHead;
+    char* filePathLengthAsString = NULL;
+    int readOpRes = 0;
+    while(readOpRes!=-1 && currFile != NULL && N > 0){
+        ec( buildMsg(msgPtr, NULL ), -1, ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 );
+        puts("PRIMA DI READ");
+        if( (readOpRes=readFile(msgPtr, client_fd, currFile->path, 1)) == 0){
+            puts("DOPO DI READ");
+            // the file was read -> content info in msgPtr
+            // send the path too. format here is: RRRLLLLLLLLLcontent
+            //filePath length
+            if( (filePathLengthAsString = intToStr(strlen(currFile->path), MSG_LEN_LENGTH)) == NULL){
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+                return -1;
+            }
+            // append the path length and the path
+            ec(
+                msgPtr->content = realloc(msgPtr->content, 
+                        msgPtr->len + MSG_LEN_LENGTH + strlen(currFile->path)+1),
+                NULL, ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
+            );
+            memmove(msgPtr->content + msgPtr->len, filePathLengthAsString, MSG_LEN_LENGTH);
+            memmove(msgPtr->content + msgPtr->len + MSG_LEN_LENGTH, 
+                currFile->path, strlen(currFile->path)+1); // move the '\0' too
+            msgPtr->len += MSG_LEN_LENGTH + strlen(currFile->path);
+            // (new) format here is: RRRLLLLLLLLLcontentLLLLLLLLLfilepath
+            //printf("len:%d\ncontent:%s\n", msgPtr->len, msgPtr->content);
+            sendTo(client_fd, msgPtr->content, msgPtr->len);
+            free(filePathLengthAsString);
+            free(msgPtr->content);
+            filePathLengthAsString=NULL;
+            N--;
+        }//else null-content-file (not read)
+        currFile = currFile->next;
+    }
+    // end of req
+    ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+    ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
+    return 0;
 }
 
 /**
@@ -416,13 +544,14 @@ int readNFiles(msg_t* msgPtr, client_fd_t client_fd, int N){
 int writeFile(msg_t* msgPtr, client_fd_t client_fd, 
         char* content, int contentSize, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
-        ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
+        ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
         return 1;
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
         if(client_fd != file->writeOwner){
+            file->writeOwner = -1;
             ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
             ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
             return 1;
@@ -453,10 +582,17 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd,
 
         // don't unlock the store here because of readNfiles handling: 
         // deadlock if some N files reader locks the store
-        START_WRITE( file, fs, 0, return -1 );
+        START_WRITE( file, fs, 0, 
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
+            return -1;
+        );
         // NOTE: UNLOCK(fs.mux) NEEDED
 
         ec( appendContentToFile(file, content, contentSize), -1, return -1 );
+
+        /* update size */
+        fs.currSize += file->size;
+        SET_MAX(fs.maxReachedSize, fs.currSize);
 
         ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
 
@@ -464,7 +600,6 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd,
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
     );
     return 0;
-    return 1;
 }
 
 /**
@@ -482,7 +617,7 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd,
 int appendToFile(msg_t* msgPtr, client_fd_t client_fd, 
         char* content, int contentSize, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -502,34 +637,47 @@ int appendToFile(msg_t* msgPtr, client_fd_t client_fd,
             return 1;
         }
         
-        // compare new storage size and capacity
-        if(newFsSize > fs.byte_capacity){
-            // eviction needed
-            ec( evictFiles(newFsSize - fs.byte_capacity, -1, client_fd), -1, return -1 );
-        }
-
-        // don't unlock the store here because of readNfiles handling: 
-        // deadlock if some N files reader locks the store
-        START_WRITE( file, fs, 0, return -1 );
+        // don't unlock the store here
+        START_WRITE( file, fs, 0, 
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 
+        );
         // NOTE: UNLOCK(fs.mux) NEEDED
 
         // is the file locked by someone else? OR is the client opened by client_fd?
         if( (file->locked_by != NULL && (file->locked_by)->client_fd != client_fd) || 
                 searchClientInList(client_fd, file->opened_by)!=0 ){
             // file is locked by someone else
-            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
-            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+            DONE_WRITE(file, fs, file->writeOwner = -1;, 
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+                return -1
+            );
             ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
             return 1;
         }
         // the client previously opened the file and is, maybe, the locker
+
+        // compare new storage size and capacity
+        if(newFsSize > fs.byte_capacity){
+            // eviction needed
+            ec( evictFiles(newFsSize - fs.byte_capacity, -1, client_fd), -1, 
+                DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+                return -1 
+            );
+        }
         
-        ec( appendContentToFile(file, content, contentSize), -1, return -1 );
+        ec( appendContentToFile(file, content, contentSize), -1, 
+            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+            return -1 
+        );
 
-        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
-
-        DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+        DONE_WRITE(file, fs, file->writeOwner = -1;, 
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+            return -1
+        );
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
     );
     return 0;
 }
@@ -545,7 +693,7 @@ int appendToFile(msg_t* msgPtr, client_fd_t client_fd,
  */ 
 int lockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -559,7 +707,11 @@ int lockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         // is the file locked by someone else?
         if( file->locked_by != NULL && (file->locked_by)->client_fd != client_fd ){
             // file is locked by someone else, push this client in locked_by list
-            ec( clientListTailInsertion(&(file->locked_by), client_fd), -1, return -1 );
+            ec( clientListTailInsertion(&(file->locked_by), client_fd), -1, 
+                DONE_WRITE(file, fs, file->writeOwner = -1;, return -1); 
+                return -1 
+            );
+            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
             ec( buildMsg(msgPtr, NULL ), -1, return -1 );
             return 0;
         }else{
@@ -567,10 +719,13 @@ int lockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
             // NOTE: specific says the operation ends successfully even if the client already
             // holds the lock
             if( file->locked_by == NULL )
-                ec( clientListTailInsertion(&(file->locked_by), client_fd), -1, return -1 );
+                ec( clientListTailInsertion(&(file->locked_by), client_fd), -1,
+                    DONE_WRITE(file, fs, file->writeOwner = -1;, return -1); 
+                    return -1 
+                );
         }
-        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
         DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
     );
     return 0;
 }
@@ -587,7 +742,7 @@ int lockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
  */ 
 int unlockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -602,13 +757,15 @@ int unlockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         if( file->locked_by == NULL || 
                 (file->locked_by != NULL && (file->locked_by)->client_fd != client_fd) ){
             // file is locked by someone else or not locked
+            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
             ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
             return 1;
         }else{
             // file's locked by the same client who did the request
+            removeClientFromList(client_fd, &(file->locked_by));
+            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
             ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
         }
-        DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
     );
     return 0;
 }
@@ -625,7 +782,7 @@ int unlockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
  */ 
 int removeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -641,9 +798,12 @@ int removeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         if( file->locked_by == NULL || 
                 (file->locked_by != NULL && (file->locked_by)->client_fd != client_fd) ){
             // file is locked by someone else or not locked
-            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
-            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+            DONE_WRITE(file, fs, file->writeOwner = -1;, 
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+                return -1
+            );
             ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
             return 1;
         }else{
             // file's locked by the same client who did the request
@@ -705,7 +865,7 @@ void freeFilesList(file_t* list){
     file_t* nextNode;
     while(list != NULL){
         nextNode = list->next;
-        printf("%s\n %s\n\n", list->path, list->content);
+        printf("%s\t %d\n", list->path, list->content != NULL);
         free( destroyFile(list, 0) ); // it returns the content of the file. We free it too
         list = nextNode;
     }
@@ -819,7 +979,7 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
             }
         }
     }
-    
+
     // insert the file to the tail
     pushFileToStorageTail(filePtr);
 
@@ -827,11 +987,11 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
     /* update size */
     fs.currSize += filePtr->size;
     SET_MAX(fs.maxReachedSize, fs.currSize);
-    
+
     /* update current files number */
     fs.currFilesNumber++;
     SET_MAX(fs.maxReachedFilesNumber, fs.currFilesNumber);
-    
+
     ec( icl_hash_insert(fs.hFileTable, filePtr->path, filePtr), NULL, return -1 );
 
     return 0;
@@ -881,7 +1041,7 @@ int deleteFile(file_t* filePtr, client_fd_t clientFd, char sendContentBackToClie
     if( filePtr == NULL)
         return 0;
     char* tempContent = NULL;
-    
+
     // detach file from the storage
     detachFileFromStorage(filePtr);
 

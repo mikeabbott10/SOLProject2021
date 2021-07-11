@@ -81,7 +81,7 @@ int max(int args, ...){
  * @return the string or NULL
  */ 
 char* intToStr(int n, int strLen){
-    if(n<0 || n>pow(10,strLen)){
+    if(n<0 || n>=pow(10,strLen)){
         puts("intToStr: n not valid for conversion");
         return NULL;
     }
@@ -218,10 +218,11 @@ int sendTo(int fd, char* content, int length){
 
     /*update msg.len*/
     msg.len = strlen(msgLenAsString) + msg.len;
-    printf("Invio->");
-    fwrite(msg.content, 1, msg.len, stdout); // debug
-    puts("");
-    fflush(stdout);
+    // printf("Invio->");
+    // fwrite(msg.content, 1, msg.len, stdout); // debug
+    // puts("");
+    // fflush(stdout);
+
     errno = 0;
     int writenRet = writen(fd, msg.content, msg.len);
     if(writenRet == -1){
@@ -243,7 +244,7 @@ void getNullMessage(msg_t *msg){
 /**
  * Build the response for the client
  * @param msgPtr: the pointer to the message struct
- * @param response: the content of the message
+ * @param response: the content of the message. Not raw data
  * @return
  *      -1 if fatal error occurred
  *      0 otherwise
@@ -255,6 +256,6 @@ int buildMsg(msg_t* msgPtr, char* response){
     }
     // build response
     ec( msgPtr->content = strdup(response), NULL, return -1 );
-    msgPtr->len = strlen(response); 
+    msgPtr->len = strlen(response);
     return 0;
 }

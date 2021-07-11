@@ -1,4 +1,5 @@
-#define _GNU_SOURCE
+//#define _GNU_SOURCE
+#include<shared_values_util.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,7 +7,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/syscall.h>
-#include<shared_values_util.h>
 
 /**
  * Initialize the shared struct lock and condition variables

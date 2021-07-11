@@ -34,6 +34,7 @@ int readn(long, void*, size_t);
 int writen(long, void*, size_t);
 int sendTo(int, char*, int);
 
+
 /*----------- connection_util and filesystem_util common stuff-------------------------------------*/
 #define NO_FLAGS 0x00
 #define O_CREATE 0x01
@@ -61,6 +62,7 @@ typedef struct cl{
     struct cl* next;
 } client_t;
 
+void getNullMessage(msg_t *msg);
 int buildMsg(msg_t*, char*);
 
 /*----------- termination stuff --------------------------------------------------------------------*/

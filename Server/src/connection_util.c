@@ -139,7 +139,7 @@ int parseMessage(char* message, int len, request_t* request){
 
     /*path length*/
     message+=4; /*first L*/
-    if( (temp = strndup(message, 9)) == NULL) return -3;
+    if( (temp = strndup(message, MSG_LEN_LENGTH)) == NULL) return -3;
     int path_len;
     if( isInteger(temp, &path_len) != 0 || path_len < 0){
         free(temp);
@@ -157,7 +157,7 @@ int parseMessage(char* message, int len, request_t* request){
 
     /*content length*/
     message+=path_len; /*first L*/
-    if( (temp = strndup(message, 9)) == NULL) return -3;
+    if( (temp = strndup(message, MSG_LEN_LENGTH)) == NULL) return -3;
     int content_len;
     if( isInteger(temp, &content_len) != 0 || content_len < 0){
         free(temp);
@@ -196,7 +196,7 @@ int performActionAndGetResponse(request_t req, msg_t* msgPtr){
             return closeFile(msgPtr, req.client_fd, req.action_related_file_path);
 
         case READ:
-            return readFile(msgPtr, req.client_fd, req.action_related_file_path);
+            return readFile(msgPtr, req.client_fd, req.action_related_file_path, 0);
 
         case READ_N:{
             // req.content here is the number of files the client wants to read
