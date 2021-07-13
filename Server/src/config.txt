@@ -1,0 +1,7 @@
+file_capacity=10
+byte_capacity=1048576
+worker_threads=4
+max_connections_buffer_size=500
+socket_path=../LSOfiletorage.sk
+eviction_policy=1
+#end_of_config

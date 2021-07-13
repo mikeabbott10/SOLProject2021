@@ -443,7 +443,7 @@ int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path, char isReadN
         return 1;
 
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
-        if(fs.eviction_policy == LRU)
+        if(fs.eviction_policy == LRU && !isReadN) // random read doesn't count
             getFsFileToTail(file);
 
         START_READ( file, fs, !isReadN, return -1 );
@@ -843,7 +843,7 @@ int removeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
             return 1;
         }else{
             // file's locked by the same client who did the request
-            deleteFile(file, -1, 0);
+            deleteFile(file, client_fd, 0);
             // a LOCKED_FILE_REMOVED message has been already 
             // sent to the client by deleteFile function. Nothing more to do
         }
@@ -1175,6 +1175,12 @@ int deleteFile(file_t* filePtr, client_fd_t clientFd, char isEviction){
         //printf("len:%d\ncontent:%s\n", tempContentSize, tempContent);
         sendTo(clientFd, tempContent, tempContentSize);
         free(filePathLengthAsString);
+    }else{
+        // removing file
+        msg_t msg;
+        ec( buildMsg(&msg, FINE_REQ_RESPONSE), -1, return -1 );
+        sendTo(clientFd, msg.content, msg.len);
+        free(msg.content);
     }
     free(tempContent);
     free(filePath);

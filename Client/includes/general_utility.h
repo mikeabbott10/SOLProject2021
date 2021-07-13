@@ -52,7 +52,6 @@ char operationRes[MAX_PATH_LEN*3]; // just to be sure
 //----- FILE UTILS ---------------------------------------------------
 DIR * openAndCD(char * );
 int getAbsolutePath(const char *, char **);
-int dirVisit_n_write(DIR *, int* , mainList_t );
 int getFilePath(char** , char* );
 int writeLocalFile(char* , char* , int );
 int getFileContent(const char*, char**, size_t*);

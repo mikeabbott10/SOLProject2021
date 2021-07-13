@@ -90,8 +90,11 @@ int getServerResponse(const char* req_related_filepath, char attemptingToLock, /
             if(eviction_dir != NULL){
                 getContentAndFilename(response+3, "Eviction", &content, &cSize, &filename);
                 // store the new file into the directory
+                printf("eviction_dir: %s\n", eviction_dir);
                 ec( getAbsolutePath(eviction_dir, &temp), 1, return EXIT_FAILURE; );
+                printf("temp: %s\n", temp);
                 ec( getFilePath(&temp, filename), 1, free(temp);return EXIT_FAILURE; );
+                printf("temp: %s\n", temp);
                 ec( writeLocalFile(temp, content, cSize), -1, free(temp);return EXIT_FAILURE; );
                 if(stdout_print){ PRINT_INFO("Storing", temp); }
                 free(temp);
@@ -136,6 +139,7 @@ int getServerResponse(const char* req_related_filepath, char attemptingToLock, /
                 return -1;
             }
             free(temp);
+            temp = NULL;
             
             printf("Locked file was removed: %s\n", response+3+MSG_LEN_LENGTH);
             free(response);
@@ -147,12 +151,11 @@ int getServerResponse(const char* req_related_filepath, char attemptingToLock, /
                 // i had the lock, i was not waiting for a result. Continue
                 continue;
             }
-            
         }
 
         if(strncmp(response, READ_FILE_CONTENT, 3)==0 && !isReadN){
             // procedure for a read request
-            printf("Read file content:\n%s\n", response+3+MSG_LEN_LENGTH);
+            //printf("Read file content:\n%s\n", response+3+MSG_LEN_LENGTH);
             
             if( (temp = strndup(response+3, MSG_LEN_LENGTH)) == NULL) return -1;
             if( isSizeT(temp, content_size) != 0 || *content_size < 0){
@@ -160,6 +163,7 @@ int getServerResponse(const char* req_related_filepath, char attemptingToLock, /
                 return -1;
             }
             free(temp);
+            temp = NULL;
             
             // store the content into buf
             ec( *buf = calloc((*content_size)+1, sizeof(char)), NULL, return -1; );

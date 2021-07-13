@@ -41,7 +41,7 @@ int performAppendFromFile(char* filepath, char* D_dir){
  *      -1 fatal error
  *      0 success
  */
-int dirVisit_n_write(DIR *dir, int *n_remaining_files, mainList_t ml){
+int dirVisit_n_write(DIR *dir, int *n_remaining_files, mainList_t ml, char* main_path){
     int opRes;
     errno = 0;
     struct dirent* ptr = readdir(dir);
@@ -64,7 +64,7 @@ int dirVisit_n_write(DIR *dir, int *n_remaining_files, mainList_t ml){
                 DIR *newdir = openAndCD(ptr->d_name);
                 if( *n_remaining_files == -2 || *n_remaining_files > 0 ){
                     //printf( "SubDirectory: %s\n", ptr->d_name );
-                    if( dirVisit_n_write(newdir, n_remaining_files, ml) == -1 ) return -1;
+                    if( dirVisit_n_write(newdir, n_remaining_files, ml, main_path) == -1 ) return -1;
                 }
                 ec(closedir(newdir), -1, return -1);
                 ec(chdir(".."), -1, return -1);
@@ -74,6 +74,13 @@ int dirVisit_n_write(DIR *dir, int *n_remaining_files, mainList_t ml){
                 // write this file to the server
                 char* absPath;
                 ec( getAbsolutePath(ptr->d_name, &absPath), -1, return -1 );
+
+                char buf[MAX_PATH_LEN];
+                // save this path and get it back after the write attempts 
+                // ( do this in order to have the originary path inside write function )
+                ec( getcwd(buf,MAX_PATH_LEN), NULL, return -1; ); // save current path
+
+                chdir(main_path); // go to the originary path
 
                 opRes=openFile(absPath, O_CREATE|O_LOCK);
                 if(stdout_print){ PRINT_INFO("Opening", absPath); }
@@ -98,13 +105,14 @@ int dirVisit_n_write(DIR *dir, int *n_remaining_files, mainList_t ml){
                         if( performAppendFromFile(absPath, ml.D_dirname) == -1 ) return -1;
                     }
                 }
+                chdir(buf); // get back
                 free(absPath);
                 msleep(ml.t_time);
             }
         }
         // continua nella dir corrente
         if( *n_remaining_files == -2 || *n_remaining_files > 0 ) 
-            if( dirVisit_n_write(dir, n_remaining_files, ml) == -1 ) return -1;
+            if( dirVisit_n_write(dir, n_remaining_files, ml, main_path) == -1 ) return -1;
     }
     return 0;
 }
@@ -153,10 +161,10 @@ int main(int argc, char **argv){
     if(ml.l_filenames != NULL){
         for(i=0; i<ml.l_itemsCount; ++i){
             if( getAbsolutePath(ml.l_filenames[i], &absPath) == -1 ){ 
-                if(stdout_print){ PRINT_INFO("Unlocking", absPath); }
+                if(stdout_print){ PRINT_INFO("Locking", absPath); }
                 continue; 
             }
-            opRes=lockFile(absPath);
+            lockFile(absPath);
             if(stdout_print){ PRINT_INFO("Locking", absPath); }
             free(absPath);
             absPath = NULL;
@@ -190,7 +198,7 @@ int main(int argc, char **argv){
         if(w_dir != NULL){
             printf("Directory: %s\n", ml.w_dirname);
             if(ml.w_n == 0) ml.w_n = -2; // visit all subdirectories
-            dirVisit_n_write(w_dir, &(ml.w_n), ml); // visito la cartella
+            dirVisit_n_write(w_dir, &(ml.w_n), ml, buf); // visito la cartella
             closedir(w_dir); // chiudo la cartella che avevo aperto
         }
         chdir(buf); // torno al path precedente al lavoro svolto
@@ -234,17 +242,17 @@ int main(int argc, char **argv){
         char* lastSlashPtr = NULL;
         size_t contentSize;
         for(i=0; i<ml.r_itemsCount; ++i){
-            if( getAbsolutePath(ml.r_filenames[i], &absPath) == -1){ continue; }
+            if( getAbsolutePath(ml.r_filenames[i], &absPath) == -1){ free(absPath);absPath=NULL;continue; }
 
             opRes=openFile(absPath, NO_FLAGS);
             if(stdout_print){ PRINT_INFO("Opening", absPath); }
-            if(opRes!=0) continue;
+            if(opRes!=0){ free(absPath);absPath=NULL;continue; }
             opRes=readFile(absPath, (void**)&fileContent, &contentSize);
             if(stdout_print){ PRINT_INFO("Reading", absPath); }
             //if(opRes!=0) continue; The file was opened, try to close it anyway
             opRes=closeFile(absPath);
             if(stdout_print){ PRINT_INFO("Closing", absPath); }
-            if(opRes!=0) continue;
+            if(opRes!=0){ free(absPath);absPath=NULL;continue; }
 
             if(ml.d_dirname != NULL){
                 // get the fileName
@@ -257,7 +265,7 @@ int main(int argc, char **argv){
                     fileName = absPath; // no free needed
                 }
                 // store the new file into the directory
-                if( getAbsolutePath(ml.d_dirname, &absPath) == -1){ continue; }
+                if( getAbsolutePath(ml.d_dirname, &absPath) == -1){ free(fileContent);free(absPath); absPath = NULL;continue; }
                 if( getFilePath(&absPath, fileName) == -1){ free(fileContent);free(absPath); absPath = NULL; continue; }
                 if( writeLocalFile(absPath, fileContent, contentSize) == -1){ free(fileContent);free(absPath); absPath = NULL; continue; }
                 if(stdout_print){ PRINT_INFO("Storing", absPath); }
@@ -273,6 +281,19 @@ int main(int argc, char **argv){
     if(ml.R_n != -1){
         readNFiles(ml.R_n, ml.d_dirname);
         msleep(ml.t_time);
+    }
+    // 7: -c option related
+    if(ml.c_filenames != NULL){
+        for(i=0; i<ml.c_itemsCount; ++i){
+            if( getAbsolutePath(ml.c_filenames[i], &absPath) == -1){ free(absPath);absPath=NULL;continue; }
+
+            opRes=removeFile(absPath);
+            if(stdout_print){ PRINT_INFO("Removing", absPath); }
+
+            free(absPath);
+            absPath = NULL;
+            msleep(ml.t_time);
+        }
     }
     
     ec( closeConnection(ml.f_socketpath), -1, freeList(ml);return EXIT_FAILURE);

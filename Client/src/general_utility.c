@@ -179,7 +179,7 @@ int getFilePath(char** dirPath, char* fileName){
         memmove((*dirPath)+dirPathLen, "/", 1); // move the '\0' too
         memmove((*dirPath)+1+dirPathLen, fileName, filePathLen+1); // move the '\0' too
     }else{
-        ec( *dirPath = realloc(*dirPath, dirPathLen+filePathLen+1), NULL, return -1);
+        ec( *dirPath = realloc(*dirPath, dirPathLen+filePathLen+1), NULL, return -1); // '/' space not needed
         memmove((*dirPath)+dirPathLen, fileName, filePathLen+1); // move the '\0' too
     }
     
