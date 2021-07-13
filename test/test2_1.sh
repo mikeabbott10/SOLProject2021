@@ -37,6 +37,6 @@ echo ---------------------------------------------------------------------------
 echo ------------------------------------------------------------------------------------
 
 # 5th client 
-#	(error) removing a not locked-by-me file
+#	removing a file
 ./Client/bin/client -f ./LSOfiletorage.sk \
 	-c test/testFolder/folder1/chromeicon.png -t200 -p

@@ -1,6 +1,6 @@
-file_capacity=10
-byte_capacity=1048576
-worker_threads=4
+file_capacity=10000
+byte_capacity=134217728
+worker_threads=1
 max_connections_buffer_size=500
 socket_path=../LSOfiletorage.sk
 eviction_policy=0
