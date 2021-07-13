@@ -103,7 +103,7 @@ void* workers_fun(void* p){
         clientBufferStatus = shared_buffer_get(client_fd_buffer, client_fd_t, 
             clientBuffer, &clientFD);
 
-        printf("client: %d, got from buffer\n", clientFD);
+        //printf("client: %d, got from buffer\n", clientFD);
         
         if( clientBufferStatus != 0 ){
             // a fatal error occurred. Let's stop the whole server
@@ -114,7 +114,7 @@ void* workers_fun(void* p){
             break;
         
         connStatus = getClientRequest(clientFD, &request);
-        printf("getClientRequest returns: %d\n", connStatus);
+        //printf("getClientRequest returns: %d\n", connStatus);
         fflush(stdout);
         if(connStatus == 0 || connStatus == -2){
             close(clientFD);
@@ -157,9 +157,9 @@ void* workers_fun(void* p){
         }
 
         /*we got a request*/
-        printf("action: %d,  action_flags: %d,  file_path: %s,  , contentSize: %d, content: %d\n", 
+        /*printf("action: %d,  action_flags: %d,  file_path: %s,  , contentSize: %d, content: %d\n", 
                 request.action, request.action_flags, request.action_related_file_path, 
-                request.contentSize, request.content != NULL);
+                request.contentSize, request.content != NULL);*/
         
         buildMsg(&msg, NULL); // init the message
         if( performActionAndGetResponse(request, &msg) == -1){
@@ -266,7 +266,7 @@ void * master_fun(void* p){
                     ec( connfd = accept(listenfd, (struct sockaddr*)NULL ,NULL), -1, 
                         master_clean_exit(listenfd, fds_from_pipe) 
                     );
-                    puts("new conn");
+                    //puts("new conn");
 
                     // write shared value
                     SHARED_VALUE_WRITE(currentClientConnections,
@@ -289,7 +289,7 @@ void * master_fun(void* p){
                     }
                     continue;
                 }else if(fd == signalPipefd[0]){
-                    puts("\t master got a termination signal");
+                    //puts("\t master got a termination signal");
                     read(signalPipefd[0], &quit_level, sizeof(quit_level));
                     if(quit_level == HARD_QUIT){
                         break;
@@ -301,7 +301,7 @@ void * master_fun(void* p){
                 FD_CLR(connfd, &set); 
 		        if (connfd == fdmax) fdmax = updatemax(set, fdmax);
                 /*push connfd to the client fd buffer*/
-                printf("putting client %d in buffer\n", connfd);
+                //printf("putting client %d in buffer\n", connfd);
                 if( shared_buffer_put(client_fd_buffer, client_fd_t, clientBuffer, connfd) != 0 ){
                     // fatal error occurred
                     pthread_kill(sig_handler_tid, SIGINT);

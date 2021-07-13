@@ -119,7 +119,7 @@ void destroyFileSystem();
 int updateLockersList(client_fd_t);
 int getFsFileToTail(file_t*);
 int insertFile(file_t*, char, client_fd_t);
-int evictFiles(int, int, client_fd_t);
+int evictFiles(int, int, client_fd_t, file_t*);
 int deleteFile(file_t*, client_fd_t, char);
 
 #endif

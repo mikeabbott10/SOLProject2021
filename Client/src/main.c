@@ -9,8 +9,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-
-
 //--------- FILES UTIL -------------------------------------------------------------------------------
 /**
  * Perform appending operation from file
@@ -249,9 +247,18 @@ int main(int argc, char **argv){
                     fileName = absPath; // no free needed
                 }
                 // store the new file into the directory
-                if( getAbsolutePath(ml.d_dirname, &absPath) == -1){ free(fileContent);free(absPath); absPath = NULL;continue; }
-                if( getFilePath(&absPath, fileName) == -1){ free(fileContent);free(absPath); absPath = NULL; continue; }
-                if( writeLocalFile(absPath, fileContent, contentSize) == -1){ free(fileContent);free(absPath); absPath = NULL; continue; }
+                if( getAbsolutePath(ml.d_dirname, &absPath) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", absPath, contentSize); }
+                    free(fileContent);free(absPath); absPath = NULL;continue; 
+                }
+                if( getFilePath(&absPath, fileName) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", absPath, contentSize); }
+                    free(fileContent);free(absPath); absPath = NULL;continue; 
+                }
+                if( writeLocalFile(absPath, fileContent, contentSize) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", absPath, contentSize); }
+                    free(fileContent);free(absPath); absPath = NULL;continue; 
+                }
                 if(stdout_print){ PRINT_INFO("Storing", absPath, contentSize); }
             }//else printf("File content: %s\n", fileContent);
 
@@ -271,7 +278,8 @@ int main(int argc, char **argv){
         for(i=0; i<ml.c_itemsCount; ++i){
             if( getAbsolutePath(ml.c_filenames[i], &absPath) == -1){ free(absPath);absPath=NULL;continue; }
 
-            opRes=removeFile(absPath);
+            lockFile(absPath);
+            removeFile(absPath);
 
             free(absPath);
             absPath = NULL;

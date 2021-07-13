@@ -14,7 +14,7 @@ INCLUDES	= -I $(INCDIR)
 # librerie da linkare a tutti i files (es. -lm per le librerie matematiche)
 LDFLAGS 	= -pthread -lm
 # altre librerie  (es. -L<path> -lmylib)
-LIBS1		= -L "./mylibs" -lgeneral_utility -lserver_config -lfilesystem_util -lconnection_util -lshared_values_util
+LIBS1		= -L "./mylibs" -lgeneral_utility -lserver_config -lfilesystem_util -lconnection_util -lshared_values_util -licl_hash
 # flags di ottimizzazione 
 OPTFLAGS	= -O3
 # flags di debugging
@@ -32,7 +32,7 @@ TARGETS		= bin/server
 # located in the directory hierarchy.
 
 
-.PHONY: all clean cleanall# test1 test2 test3
+.PHONY: all clean cleanall
 
 # root target
 all		: $(TARGETS)
@@ -40,13 +40,6 @@ all		: $(TARGETS)
 bin/server: src/main.c mylibs/libgeneral_utility.so mylibs/libserver_config.so mylibs/libconnection_util.so mylibs/libfilesystem_util.so
 	$(CC) $(INCLUDES) $(CCFLAGS) $(FLAGS) $< -o $@ -Wl,-rpath='$$ORIGIN/../mylibs' $(LDFLAGS) $(LIBS1)
 	
-#	echo "#!/bin/bash\ncd $(CURDIR)\nvalgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./bin/server" > valgrind_run.sh
-#	chmod +x ./valgrind_run.sh
-
-#	echo "#!/bin/bash\ncd $(CURDIR)\n./bin/server" > run.sh
-#	chmod +x ./run.sh
-
-#valgrind --log-file="gino${a}.txt" --leak-check=full --show-leak-kinds=all --track-origins=yes
 
 mylibs/libconnection_util.so: objs/connection_util.o $(INCDIR)/connection_util.h mylibs/libgeneral_utility.so mylibs/libfilesystem_util.so mylibs/libshared_values_util.so
 	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility -lfilesystem_util

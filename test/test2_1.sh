@@ -26,16 +26,17 @@ echo ---------------------------------------------------------------------------
 ./Client/bin/client -f ./LSOfiletorage.sk \
 	-r test/testFolder/folder1/chromeicon.png -d test/testFolder/folder2 -t200 -p
 
+
 echo ------------------------------------------------------------------------------------
 
-# 4th client 
+# 4th client
+#	read 70 random files storing them in ./test/testFolder/folder2 and removing a file
+./Client/bin/client -f ./LSOfiletorage.sk \
+	-R70 -d test/testFolder/folder2 -c test/testFolder/folder1/operaicon.png -t200 -p
+
+echo ------------------------------------------------------------------------------------
+
+# 5th client 
 #	(error) removing a not locked-by-me file
 ./Client/bin/client -f ./LSOfiletorage.sk \
 	-c test/testFolder/folder1/chromeicon.png -t200 -p
-
-echo ------------------------------------------------------------------------------------
-
-# 5th client
-#	read 70 random files storing them in ./test/testFolder/folder2 and locking and removing a file
-./Client/bin/client -f ./LSOfiletorage.sk \
-	-R70 -d test/testFolder/folder2 -l test/testFolder/folder1/operaicon.png -c test/testFolder/folder1/operaicon.png -t200 -p

@@ -20,7 +20,7 @@
 int sockfd;
 char* sockPath = NULL;
 
-char stdout_print; // print info on stdout
+char stdout_print = 1; // print info on stdout
 
 int openConnection(const char*, int, const struct timespec);
 int closeConnection(const char*);

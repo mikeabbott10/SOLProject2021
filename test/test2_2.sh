@@ -27,13 +27,22 @@ echo ---------------------------------------------------------------------------
 echo ------------------------------------------------------------------------------------
 
 # 4th client 
-#	(error) removing a not locked-by-me file
+#	locking and unlocking the same file
 ./Client/bin/client -f ./LSOfiletorage.sk \
-	-c test/testFolder/folder1/chromeicon.png -t200 -p
+	-l test/testFolder/folder1/chromeicon.png -u test/testFolder/folder1/chromeicon.png -t200 -p
 
 echo ------------------------------------------------------------------------------------
 
 # 5th client
-#	read all the files storing them in ./test/testFolder/folder2 and locking and removing a file
+#	read all the files storing them in ./test/testFolder/folder2 and locking and removing a file after explicit lock (double lock doesn't fail)
 ./Client/bin/client -f ./LSOfiletorage.sk \
 	-R0 -d test/testFolder/folder2 -l test/testFolder/folder1/operaicon.png -c test/testFolder/folder1/operaicon.png -t200 -p
+
+echo ------------------------------------------------------------------------------------
+
+# 6th client
+#	reading and (error) storing a file
+./Client/bin/client -f ./LSOfiletorage.sk \
+	-r test/testFolder/folder1/chromeicon.png -d test/testFolder/folder654654 -t200 -p
+
+echo ------------------------------------------------------------------------------------

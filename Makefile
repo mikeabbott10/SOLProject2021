@@ -65,9 +65,5 @@ test2_2: test/test2_2.sh Client/bin/client Server/bin/server
 	    kill -1 $$(cat server.PID) || true; \
 	fi;
 
-test3: test/test3.sh Client/bin/client Server/bin/server
-	./test/test3.sh
-
 Client/bin/client Server/bin/server:
 	make all
-

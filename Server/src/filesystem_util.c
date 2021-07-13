@@ -2,17 +2,6 @@
 #include<stdlib.h>
 #include<string.h>
 
-/*Note: 
-creazione/distruzione:
-altrimenti acquire globale - cerca file - acquire file - operazione - release file - release globale
-
-write/appendTo:
-acquire globale - cerca file - acquire file - release globale - operazione - release file
-
-read:
-acquire globale - cerca file - operazione - release globale
-
-*/
 /*----------- Util --------------------------------------------------------------------------------*/
 /* Print the storage*/
 /*void printFs(){
@@ -235,6 +224,8 @@ int sendContentToClient(client_fd_t clientFd, char* content, int contentLength, 
  *      0 otherwise
  */
 int appendContentToFile(file_t* filePtr, char* content, int contentSize){
+    if(!filePtr)
+        return -1;
     size_t newLen = filePtr->size + contentSize;
     ec( filePtr->content = realloc(filePtr->content, (newLen + 1)*sizeof(char)), 
         NULL, return -1
@@ -581,20 +572,6 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd,
         ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
         return 1;
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
-        if(client_fd != file->writeOwner){
-            file->writeOwner = -1;
-            ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
-            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
-            return 1;
-        }
-
-        assert(
-            (file->locked_by)->client_fd == client_fd && searchClientInList(client_fd, file->opened_by)==0
-        );
-        
-        if(fs.eviction_policy == LRU)
-            getFsFileToTail(file);
-
         /* compare new file size and fs capacity */
         if(contentSize > fs.byte_capacity){
             /* no way we can write this content to the file. Rejected*/
@@ -603,38 +580,62 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd,
             return 1;
         }
         
-        // compare new storage size and capacity
-        int newFsSize = contentSize + fs.currSize;
-        if(newFsSize > fs.byte_capacity){
-            // eviction needed
-            ec( evictFiles(newFsSize - fs.byte_capacity, -1,
-                client_fd), -1, return -1 );
-        }
-
-        // don't unlock the store here because of readNfiles handling: 
-        // deadlock if some N files reader locks the store
+        // don't unlock the store here
         START_WRITE( file, fs, 0, 
             ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
             return -1;
         );
         // NOTE: UNLOCK(fs.mux) NEEDED
 
+        if(client_fd != file->writeOwner){
+            DONE_WRITE(file, fs, file->writeOwner = -1;, 
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
+            );
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+            ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            return 1;
+        }
+        assert(
+            (file->locked_by)->client_fd == client_fd && searchClientInList(client_fd, file->opened_by)==0
+        );
+        
+        // compare new storage size and capacity
+        int newFsSize = contentSize + fs.currSize;
+        if(newFsSize > fs.byte_capacity){
+            // eviction needed
+            ec( evictFiles(newFsSize - fs.byte_capacity, -1,
+                client_fd, file), -1, 
+                DONE_WRITE(file, fs, file->writeOwner = -1;, 
+                    ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
+                    return -1
+                );
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
+                return -1  
+            );
+        }
+
         ec( appendContentToFile(file, content, contentSize), -1, 
-            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 
+            DONE_WRITE(file, fs, file->writeOwner = -1;, 
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
+                return -1
+            );
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
+            return -1 
         );
 
         /* update size */
         fs.currSize += file->size;
         SET_MAX(fs.maxReachedSize, fs.currSize);
 
-        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, 
-            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 
-        );
+        if(fs.eviction_policy == LRU)
+            getFsFileToTail(file);
 
         DONE_WRITE(file, fs, file->writeOwner = -1;, 
             ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
         );
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+        
+        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
     );
     return 0;
 }
@@ -660,12 +661,8 @@ int appendToFile(msg_t* msgPtr, client_fd_t client_fd,
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
         return 1;
         , // - FOUND PROCEDURE ----------------------------------------------------------------------
-        if(fs.eviction_policy == LRU)
-            getFsFileToTail(file);
-        
         int newFsSize = contentSize + fs.currSize;
-        int newFileSize = contentSize + file->size;
-
+        int newFileSize = contentSize + file->size;     
         /* compare new file size and fs capacity */
         if(newFileSize > fs.byte_capacity){
             /* no way we can append this content to the file. Rejected*/
@@ -697,17 +694,27 @@ int appendToFile(msg_t* msgPtr, client_fd_t client_fd,
         // compare new storage size and capacity
         if(newFsSize > fs.byte_capacity){
             // eviction needed
-            ec( evictFiles(newFsSize - fs.byte_capacity, -1, client_fd), -1, 
-                DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
-                ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+            ec( evictFiles(newFsSize - fs.byte_capacity, -1, client_fd, file), -1, 
+                DONE_WRITE(file, fs, file->writeOwner = -1;, 
+                    ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
+                    return -1
+                );
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
                 return -1 
             );
         }
         
         ec( appendContentToFile(file, content, contentSize), -1, 
-            DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+            DONE_WRITE(file, fs, file->writeOwner = -1;, 
+                ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
+                return -1
+            );
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); 
             return -1 
         );
+
+        if(fs.eviction_policy == LRU)
+            getFsFileToTail(file);
 
         DONE_WRITE(file, fs, file->writeOwner = -1;, 
             ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
@@ -800,6 +807,17 @@ int unlockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         }else{
             // file's locked by the same client who did the request
             removeClientFromList(client_fd, &(file->locked_by));
+            // warn the current locker if exists
+            if(file->locked_by != NULL){
+                msg_t message;
+                ec( buildMsg(&message, NULL ), -1, return -1 );
+                if( buildMsg(&message, FINE_REQ_RESPONSE ) == -1 ||
+                        sendTo((file->locked_by)->client_fd, message.content, message.len)==-1 ){
+                    DONE_WRITE(file, fs, , return -1);
+                    return -1;
+                }
+                free(message.content);
+            }
             DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
             ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
         }
@@ -845,7 +863,7 @@ int removeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
         }else{
             // file's locked by the same client who did the request
             deleteFile(file, client_fd, 0);
-            // a LOCKED_FILE_REMOVED message has been already 
+            // a message has been already 
             // sent to the client by deleteFile function. Nothing more to do
         }
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
@@ -900,7 +918,8 @@ int initFileSystem(size_t file_capacity, size_t byte_capacity, char eviction_pol
 void freeFilesList(file_t* list){
     puts("\n\nDestroying file system.");
     printf("Highest number of files ever reached: %ld\n", fs.maxReachedFilesNumber);
-    printf("Highest number of stored bytes ever reached: %ld\n", fs.maxReachedSize);
+    float MB = fs.maxReachedSize/1048576.0; // 1048576 bytes = 1MB
+    printf("Highest number of stored Mbytes ever reached: %.3f\n", MB);
     printf("Times the eviction algorithm has been called up: %ld\n", fs.performed_evictions);
     printf("Files at the end of this session:\n");
     file_t* nextNode;
@@ -943,13 +962,15 @@ int updateLockersList(client_fd_t clientFD){
                 // warn the 2nd locker and remove the first one
                 // remove the client
                 removeClientFromList(clientFD, &(nextNode->locked_by));
-                // warn the current locker
-                if( buildMsg(&msg, FINE_REQ_RESPONSE ) == -1 &&
-                        sendTo(clientFD, msg.content, msg.len)!=1 ){
-                    DONE_WRITE(nextNode, fs, , 
-                        ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
-                    );
-                    return -1;
+                // warn the current locker if exists
+                if(nextNode->locked_by != NULL){
+                    if( buildMsg(&msg, FINE_REQ_RESPONSE ) == -1 ||
+                            sendTo((nextNode->locked_by)->client_fd, msg.content, msg.len) == -1 ){
+                        DONE_WRITE(nextNode, fs, , 
+                            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
+                        );
+                        return -1;
+                    }
                 }
             }else{
                 // remove the client
@@ -1056,7 +1077,7 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
         /* storage is not empty */
         if( eviction_needed ){
             if(performEviction){
-                ec( evictFiles(newSize - fs.byte_capacity, newFilesNum - fs.file_capacity, client_fd),
+                ec( evictFiles(newSize - fs.byte_capacity, newFilesNum - fs.file_capacity, client_fd, filePtr),
                     -1, return -1 
                 );
             }else{
@@ -1093,15 +1114,15 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
  *      -1 if fatal error occurred
  *      0 otherwise
  */
-int evictFiles(int bytesNum, int filesNum, client_fd_t clientFd){
+int evictFiles(int bytesNum, int filesNum, client_fd_t clientFd, file_t* incomingFile){
     fs.performed_evictions++;
     file_t* currFile = fs.fileListHead;
     file_t* nextFile;
     while(currFile != NULL){
         nextFile = currFile->next;
         if( filesNum > 0 || bytesNum > 0){
-            // we need to evict someone
-            if( fs.eviction_policy == FIFO || fs.eviction_policy == LRU ){
+            // we need to evict someone (beware of evicting the same file we are going to write -> deadlock)
+            if( incomingFile != currFile && (fs.eviction_policy == FIFO || fs.eviction_policy == LRU) ){
                 // we evict the less recently inserted files (from fs.fileListHead ahead)
                 START_WRITE(currFile, fs, 0, return -1);
                 filesNum--;

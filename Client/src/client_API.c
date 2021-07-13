@@ -89,18 +89,25 @@ int getServerResponse(const char* req_related_filepath, char attemptingToLock, /
             
             if(eviction_dir != NULL){
                 if( getContentAndFilename(response+3, "Eviction", &content, &cSize, &filename) == -1) return -1;
+
                 // store the new file into the directory
-                //printf("eviction_dir: %s\n", eviction_dir);
-                ec( getAbsolutePath(eviction_dir, &temp), 1, return EXIT_FAILURE; );
-                //printf("temp: %s\n", temp);
-                ec( getFilePath(&temp, filename), 1, free(temp);return EXIT_FAILURE; );
-                //printf("temp: %s\n", temp);
-                ec( writeLocalFile(temp, content, cSize), -1, free(temp);return EXIT_FAILURE; );
+                if( getAbsolutePath(eviction_dir, &temp) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
+                    free(content); content=NULL; free(temp); temp = NULL; continue; 
+                }
+                if( getFilePath(&temp, filename) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
+                    free(content); content=NULL; free(temp); temp = NULL; continue; 
+                }
+                if( writeLocalFile(temp, content, cSize) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
+                    free(content); content=NULL; free(temp); temp = NULL; continue; 
+                }
                 if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
                 free(temp);
+                temp = NULL;
                 free(content);
                 content = NULL;
-                temp = NULL;
             }// else file was removed
             free(response);
             continue;
@@ -113,9 +120,18 @@ int getServerResponse(const char* req_related_filepath, char attemptingToLock, /
             
             if(readNDir != NULL){
                 // store the new file into the directory
-                ec( getAbsolutePath(readNDir, &temp), 1, return EXIT_FAILURE; );
-                ec( getFilePath(&temp, filename), 1, free(temp);return EXIT_FAILURE; );
-                ec( writeLocalFile(temp, content, cSize), -1, free(temp);return EXIT_FAILURE; );
+                if( getAbsolutePath(readNDir, &temp) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
+                    free(content); content=NULL; free(temp); temp = NULL; continue; 
+                }
+                if( getFilePath(&temp, filename) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
+                    free(content); content=NULL; free(temp); temp = NULL; continue; 
+                }
+                if( writeLocalFile(temp, content, cSize) == -1){ 
+                    if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
+                    free(content); content=NULL; free(temp); temp = NULL; continue; 
+                }
                 if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
                 free(temp);
                 temp = NULL;
@@ -400,7 +416,14 @@ int writeFile(const char* pathname, const char* dirname){
     return res;
 }
 
-
+/**
+ * Send an append to file request to the server.
+ * @param pathname: the path of the file we are going to write on
+ * @param dirname: the path of the directory we are going to store the eventually evicted files in
+ * @param buf: bytes to append to the file
+ * @param size: size of buf
+ * @return: 0 if file was written, -1 if we fail (errno is setted up)
+ */
 int appendToFile(const char* pathname, void* buf, size_t size, const char* dirname){
     errno = 0;
     msg_t msg = buildMessage(APPEND, NO_FLAGS, pathname, buf, size);

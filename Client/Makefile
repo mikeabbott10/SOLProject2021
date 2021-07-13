@@ -40,16 +40,6 @@ all		: $(TARGETS)
 bin/client: src/main.c mylibs/libgeneral_utility.so mylibs/libconn.so mylibs/libcmdlineparser.so mylibs/libclient_API.so mylibs/libclient_API.so
 	$(CC) $(INCLUDES) $(CCFLAGS) $(FLAGS) $< -o $@ -Wl,-rpath='$$ORIGIN/../mylibs' $(LDFLAGS) $(LIBS1)
 	
-#	echo "#!/bin/bash\ncd $(CURDIR)\nvalgrind --leak-check=full ./bin/client -f ../LSOfiletorage.sk -w w_dirnome,98 -W W_fail,W_faildue,W_failtre \
-#	-D D_dirnomignolo -r r_leggoquesto,r_leggopurequesto -d d_cartellona -l l_file1,l_file2,l_file3,l_file4 \
-#	-u u_file1,u_file2,u_file3,u_file4,u_file5 -c c_file1,c_file2 -l 'CIAOOOO FILE.TXT' -l OPPP -c BLUUU -l SIE -t500" > valgrind_run.sh
-#	chmod +x ./valgrind_run.sh
-
-#	echo "#!/bin/bash\ncd $(CURDIR)\n./bin/client -f ../LSOfiletorage.sk -w w_dirnome,98 -W W_fail,W_faildue,W_failtre \
-#	-D D_dirnomignolo -r r_leggoquesto,r_leggopurequesto -d d_cartellona -l l_file1,l_file2,l_file3,l_file4 \
-#	-u u_file1,u_file2,u_file3,u_file4,u_file5 -c c_file1,c_file2 -l 'CIAOOOO FILE.TXT' -l OPPP -c BLUUU -l SIE -t500" > run.sh
-#	chmod +x ./run.sh
-
 mylibs/libclient_API.so: objs/client_API.o $(INCDIR)/client_API.h mylibs/libgeneral_utility.so mylibs/libconn.so
 	$(CC) -shared -o $@ $< -Wl,-rpath='$$ORIGIN/../mylibs' -L "./mylibs" -lgeneral_utility -lconn
 
