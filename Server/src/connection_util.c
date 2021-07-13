@@ -230,3 +230,14 @@ int performActionAndGetResponse(request_t req, msg_t* msgPtr){
     }
     return 1;
 }
+
+/**
+ * Remove clientFD from the lockers list of the files in the storage
+ * @param clientFD: the client descriptor
+ * @return 
+ *      0 success
+ *      -1 fatal error
+ */ 
+int removeLocker(client_fd_t clientFD){
+    return updateLockersList(clientFD);
+}

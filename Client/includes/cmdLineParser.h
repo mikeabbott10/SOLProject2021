@@ -1,5 +1,6 @@
 #if !defined(_CMDLINEPARSER_H)
 #define _CMDLINEPARSER_H
+#include<general_utility.h>
 
 void initML(mainList_t*);
 int parseCmdLine(int, char**, mainList_t*);

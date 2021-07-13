@@ -29,7 +29,8 @@ char isInteger(const char* s, int* n){
         return 0;
     }
 
-    // non è un numero
+    // non è un numero valido
+    errno = EINVAL; // Invalid argument (POSIX.1-2001).
     return 1;
 }
 
@@ -58,7 +59,8 @@ char isSizeT(const char* s, size_t* n){
         return 0;
     }
 
-    // non è un numero
+    // non è un size_t valido
+    errno = EINVAL; // Invalid argument (POSIX.1-2001).
     return 1;
 }
 
@@ -141,7 +143,7 @@ void msleep(long msec){
 
 
 DIR * openAndCD(char * path){
-    ec(chdir(path), -1, return NULL); // mi sposto nella cartella
+    if(chdir(path) == -1) return NULL; // mi sposto nella cartella
     DIR *newdir = opendir(".");
     ec(newdir, NULL, return NULL);
     return newdir;
@@ -156,6 +158,7 @@ int getAbsolutePath(const char *path, char **absPathPtr){
     }
     char cwd[MAX_PATH_LEN];
     ec( getcwd(cwd, MAX_PATH_LEN), NULL, return -1);
+    //printf("\tcwd: %s", cwd);
     ec(*absPathPtr = calloc(strlen(path) + strlen(cwd) + 2, sizeof(char)), NULL, return -1);
     if( snprintf(*absPathPtr, MAX_PATH_LEN, "%s/%s", cwd, path) < 0 )
         return -1;
@@ -164,20 +167,28 @@ int getAbsolutePath(const char *path, char **absPathPtr){
 
 /**
  * @return 
- *      1 fatal error
+ *      -1 fatal error
  *      0 success
  */
 int getFilePath(char** dirPath, char* fileName){
     size_t dirPathLen = strlen(*dirPath);
     size_t filePathLen = strlen(fileName);
-    ec( *dirPath = realloc(*dirPath, dirPathLen+filePathLen+1), NULL, return 1);
-    memmove((*dirPath)+dirPathLen, fileName, filePathLen+1); // move the '\0' too
+    if( strrchr(*dirPath, '/') != *dirPath+dirPathLen-1){
+        // '/' is not the last char
+        ec( *dirPath = realloc(*dirPath, dirPathLen+1+filePathLen+1), NULL, return -1); // '/' space too
+        memmove((*dirPath)+dirPathLen, "/", 1); // move the '\0' too
+        memmove((*dirPath)+1+dirPathLen, fileName, filePathLen+1); // move the '\0' too
+    }else{
+        ec( *dirPath = realloc(*dirPath, dirPathLen+filePathLen+1), NULL, return -1);
+        memmove((*dirPath)+dirPathLen, fileName, filePathLen+1); // move the '\0' too
+    }
+    
     return 0;
 }
 
 int writeLocalFile(char* filePath, char* content, int contentSize){
     FILE* fdo = fopen(filePath, "w");
-    ec( fdo, NULL, return -1; );
+    if( fdo== NULL) return -1;
     ec( fwrite(content, sizeof(char), contentSize, fdo), -1, 
         ec(fclose(fdo), -1, return -1); return -1;
     );
@@ -186,5 +197,32 @@ int writeLocalFile(char* filePath, char* content, int contentSize){
     // kernel space buffer flush
     ec(fsync(fileno(fdo)), -1, return -1);
     ec(fclose(fdo), -1, return -1);
+    return 0;
+}
+
+/**
+ * Get the content of the file filePath and store it at *contentPtr (not allocated yet)
+ * @param filePath: the path of the file
+ * @param contentPtr: the pointer to the area we will allocate to store the content
+ * @param contentSize: size of the content we will find
+ * @return 
+ *      0 if everything's ok
+ *      -1 if fatal error
+ */
+int getFileContent(const char* filePath, char** contentPtr, size_t *contentSize){
+    FILE* fdi = fopen(filePath, "r");
+    if( fdi== NULL) return -1;
+
+    ec(fseek(fdi, 0L, SEEK_END), -1, fclose(fdi); return -1);
+    *contentSize = ftell(fdi);
+    rewind(fdi); // go back
+
+    ec( *contentPtr = malloc(*contentSize * sizeof(char)), NULL, fclose(fdi); return -1 );
+
+    ec_n( fread(*contentPtr, 1, *contentSize, fdi), *contentSize, 
+        free(*contentPtr); fclose(fdi); return -1;
+    );
+
+    ec( fclose(fdi), -1, free(*contentPtr); return -1; );
     return 0;
 }

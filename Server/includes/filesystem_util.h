@@ -116,6 +116,7 @@ int removeFile(msg_t*, client_fd_t, char*);
 /*----------- Backend --------------------------------------------------------------------------*/
 int initFileSystem(size_t, size_t, char);
 void destroyFileSystem();
+int updateLockersList(client_fd_t);
 int getFsFileToTail(file_t*);
 int insertFile(file_t*, char, client_fd_t);
 int evictFiles(int, int, client_fd_t);

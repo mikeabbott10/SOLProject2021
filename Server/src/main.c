@@ -126,6 +126,11 @@ void* workers_fun(void* p){
                 pthread_kill(sig_handler_tid, SIGINT);
                 break;
             );
+            if(removeLocker(clientFD) == -1){
+                // fatal error occurred
+                pthread_kill(sig_handler_tid, SIGINT);
+                break;
+            }
             continue;
         }else if(connStatus == -1){
             /*client closed connection while server was waiting for its request*/
@@ -137,6 +142,11 @@ void* workers_fun(void* p){
                 pthread_kill(sig_handler_tid, SIGINT);
                 break;
             );
+            if(removeLocker(clientFD) == -1){
+                // fatal error occurred
+                pthread_kill(sig_handler_tid, SIGINT);
+                break;
+            }
             continue;
         }else if(connStatus == -3){
             /*allocation error occurred, not enough memory, stop here*/

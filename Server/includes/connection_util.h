@@ -45,5 +45,6 @@ char spawnWorkers(int, workerFun);
 int getClientRequest(int clientFD, request_t* request);
 int parseMessage(char*, int, request_t*);
 int performActionAndGetResponse(request_t, msg_t*);
+int removeLocker(client_fd_t);
 
 #endif

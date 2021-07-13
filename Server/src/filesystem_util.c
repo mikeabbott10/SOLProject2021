@@ -61,16 +61,39 @@ int buildNewFile(file_t** filePtr, char* path){
  * @param list: the list to free
  * @param warnClients: flag: warn the clients about the distruction of the file
  */
-void freeClientsList(client_t* list, char warnClients){
+int freeClientsList(client_t* list, char* filepath, char warnClients){
     client_t* nextNode;
+    // in order to warn clients: --------
+    int pathSize;
+    char* str = NULL;
+    int strLen;
+    if(filepath != NULL){
+        pathSize = strlen(filepath);
+        char* pathLenAsString;
+        strLen = strlen(LOCKED_FILE_REMOVED) + MSG_LEN_LENGTH + pathSize;
+        // Send a message to the client clientFd, warning him the file was removed
+        ec( (pathLenAsString = intToStr(pathSize, MSG_LEN_LENGTH)), NULL, return -1 );
+        ec( str = calloc(strLen + 1, sizeof(char)), NULL, return -1 );
+        if( memcpy(str, LOCKED_FILE_REMOVED, 3) == NULL || 
+                memcpy(str+3, pathLenAsString, MSG_LEN_LENGTH) == NULL ||
+                memcpy(str+3+MSG_LEN_LENGTH, filepath, pathSize) == NULL ){
+            free(pathLenAsString);
+            free(str);
+            return -1;
+        }
+        free(pathLenAsString);
+    }
+    // ----------
     while(list != NULL){
         nextNode = list->next;
-        if(warnClients && list->client_fd > 0)
-            // Send a message to the client clientFd, warning him the file was removed
-            sendTo(list->client_fd, LOCKED_FILE_REMOVED, strlen(LOCKED_FILE_REMOVED));
+        if(warnClients && list->client_fd > 0){
+            sendTo(list->client_fd, str, strLen);
+        }
         free(list);
         list = nextNode;
     }
+    free(str);
+    return 0;
 }
 
 /**
@@ -130,8 +153,8 @@ int searchClientInList(client_fd_t clientFD, client_t* list){
  * @return the file content
  */
 char* destroyFile(file_t* file, char warn_lockers){
-    freeClientsList(file->locked_by, warn_lockers);
-    freeClientsList(file->opened_by, 0);
+    freeClientsList(file->locked_by, file->path, warn_lockers);
+    freeClientsList(file->opened_by, 0, 0);
     free(file->path);
     pthread_mutex_destroy(&(file->mux));
     pthread_mutex_destroy(&(file->order));
@@ -183,18 +206,21 @@ int sendContentToClient(client_fd_t clientFd, char* content, int contentLength, 
     if(content == NULL)
         return 0;
     //printf("content:%s", content);
-    char* str;
+    char* msg;
     int newLen = strlen(TAG) + MSG_LEN_LENGTH + contentLength;
     char* contentLenAsString;
     if( (contentLenAsString = intToStr(contentLength, MSG_LEN_LENGTH)) == NULL)
         return -1;
-    ec( str = calloc(newLen + 1, sizeof(char)), NULL, return -1 );
-    if( memcpy(str, TAG, 3) == NULL || memcpy(str+3, contentLenAsString, MSG_LEN_LENGTH) == NULL ||
-            memcpy(str+3+MSG_LEN_LENGTH, content, contentLength) == NULL ){
-        free(str);
+    ec( msg = calloc(newLen + 1, sizeof(char)), NULL, return -1 );
+    if( memcpy(msg, TAG, 3) == NULL || memcpy(msg+3, contentLenAsString, MSG_LEN_LENGTH) == NULL ||
+            memcpy(msg+3+MSG_LEN_LENGTH, content, contentLength) == NULL ){
+        free(msg);
+        free(contentLenAsString);
         return -1;
     }
-    sendTo(clientFd, str, newLen);
+    sendTo(clientFd, msg, newLen);
+    free(msg);
+    free(contentLenAsString);
     return 0;
 }
 
@@ -236,7 +262,7 @@ int appendContentToFile(file_t* filePtr, char* content, int contentSize){
  */ 
 int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(1, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         if( !(flags & O_CREATE) ){
             // O_CREATE is not part of the flags
@@ -328,7 +354,7 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
 
         // NOTE: we assume a client can open the file even if he's already an opener
         if( searchClientInList(client_fd, file->opened_by)!=0 ){
-            // let's make it opened by client_fd
+            // let's make it opened by client_fd if he's not an opener yet
             ec( clientListTailInsertion(&(file->opened_by), client_fd), -1, 
                 DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
                 return -1 
@@ -357,7 +383,7 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
  */ 
 int closeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(1, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -434,6 +460,9 @@ int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path, char isReadN
         if( searchClientInList(client_fd, file->opened_by)!=0 && !isReadN ){
             // client is not an opener 
             ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
+            DONE_READ(file, fs, file->writeOwner = -1;, 
+                if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
+            );
             if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
             return 1;
         }
@@ -442,6 +471,9 @@ int readFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path, char isReadN
         
         if(file->content == NULL){
             ec( buildMsg(msgPtr, NO_CONTENT_FILE ), -1, return -1 );
+            DONE_READ(file, fs, file->writeOwner = -1;, 
+                if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
+            );
             if(!isReadN) ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
             return 1;
         }
@@ -493,9 +525,7 @@ int readNFiles(msg_t* msgPtr, client_fd_t client_fd, int N){
     int readOpRes = 0;
     while(readOpRes!=-1 && currFile != NULL && N > 0){
         ec( buildMsg(msgPtr, NULL ), -1, ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 );
-        puts("PRIMA DI READ");
         if( (readOpRes=readFile(msgPtr, client_fd, currFile->path, 1)) == 0){
-            puts("DOPO DI READ");
             // the file was read -> content info in msgPtr
             // send the path too. format here is: RRRLLLLLLLLLcontent
             //filePath length
@@ -517,10 +547,10 @@ int readNFiles(msg_t* msgPtr, client_fd_t client_fd, int N){
             //printf("len:%d\ncontent:%s\n", msgPtr->len, msgPtr->content);
             sendTo(client_fd, msgPtr->content, msgPtr->len);
             free(filePathLengthAsString);
-            free(msgPtr->content);
             filePathLengthAsString=NULL;
             N--;
-        }//else null-content-file (not read)
+        }//else null-content-file (not sent back)
+        free(msgPtr->content);
         currFile = currFile->next;
     }
     // end of req
@@ -544,7 +574,7 @@ int readNFiles(msg_t* msgPtr, client_fd_t client_fd, int N){
 int writeFile(msg_t* msgPtr, client_fd_t client_fd, 
         char* content, int contentSize, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(1, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, NOT_PERMITTED_ACTION_RESPONSE ), -1, return -1 );
@@ -572,11 +602,11 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd,
             return 1;
         }
         
-        // compare new storage size and capacity AND new current files number and capacity
+        // compare new storage size and capacity
         int newFsSize = contentSize + fs.currSize;
-        if(newFsSize > fs.byte_capacity || fs.currFilesNumber +1 > fs.file_capacity){
+        if(newFsSize > fs.byte_capacity){
             // eviction needed
-            ec( evictFiles(newFsSize - fs.byte_capacity, fs.currFilesNumber +1 - fs.file_capacity,
+            ec( evictFiles(newFsSize - fs.byte_capacity, -1,
                 client_fd), -1, return -1 );
         }
 
@@ -588,15 +618,21 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd,
         );
         // NOTE: UNLOCK(fs.mux) NEEDED
 
-        ec( appendContentToFile(file, content, contentSize), -1, return -1 );
+        ec( appendContentToFile(file, content, contentSize), -1, 
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 
+        );
 
         /* update size */
         fs.currSize += file->size;
         SET_MAX(fs.maxReachedSize, fs.currSize);
 
-        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, return -1 );
+        ec( buildMsg(msgPtr, FINE_REQ_RESPONSE ), -1, 
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 
+        );
 
-        DONE_WRITE(file, fs, file->writeOwner = -1;, return -1);
+        DONE_WRITE(file, fs, file->writeOwner = -1;, 
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
+        );
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
     );
     return 0;
@@ -617,7 +653,7 @@ int writeFile(msg_t* msgPtr, client_fd_t client_fd,
 int appendToFile(msg_t* msgPtr, client_fd_t client_fd, 
         char* content, int contentSize, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(1, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -693,7 +729,7 @@ int appendToFile(msg_t* msgPtr, client_fd_t client_fd,
  */ 
 int lockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(1, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -742,7 +778,7 @@ int lockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
  */ 
 int unlockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(1, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -782,7 +818,7 @@ int unlockFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
  */ 
 int removeFile(msg_t* msgPtr, client_fd_t client_fd, char* file_path){
     file_t* file;
-    LOCK_FS_SEARCH_FILE(0, client_fd, file, file_path,
+    LOCK_FS_SEARCH_FILE(1, client_fd, file, file_path,
         // - NOT FOUND PROCEDURE --------------------------------------------------------------------
         ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
         ec( buildMsg(msgPtr, WRONG_FILEPATH_RESPONSE ), -1, return -1 );
@@ -861,14 +897,19 @@ int initFileSystem(size_t file_capacity, size_t byte_capacity, char eviction_pol
  * @param the list to free
  */
 void freeFilesList(file_t* list){
-    puts("destroying fs, FILES:");
+    puts("\n\nDestroying file system.");
+    printf("Highest number of files ever reached: %ld\n", fs.maxReachedFilesNumber);
+    printf("Highest number of stored bytes ever reached: %ld\n", fs.maxReachedSize);
+    printf("Times the eviction algorithm has been called up: %ld\n", fs.performed_evictions);
+    printf("Files at the end of this session:\n");
     file_t* nextNode;
     while(list != NULL){
         nextNode = list->next;
-        printf("%s\t %d\n", list->path, list->content != NULL);
+        printf("%s\t\n", list->path);
         free( destroyFile(list, 0) ); // it returns the content of the file. We free it too
         list = nextNode;
     }
+    puts("\n");
 }
 
 /**
@@ -878,6 +919,50 @@ void destroyFileSystem(){
     // destroy hash table, no free functions here because the keys are inside the files list
     icl_hash_destroy(fs.hFileTable,NULL,NULL);
     freeFilesList(fs.fileListHead);
+}
+
+/**
+ * Update the lockers list of the files inside the storage removing clientFD
+ * @param clientFD: the client desctiptor
+ * @return 
+ *      0 success
+ *      -1 fatal error
+ */
+int updateLockersList(client_fd_t clientFD){
+    ec( SAFE_LOCK(fs.mux), 1, return -1 );
+    file_t* nextNode = fs.fileListHead;
+    msg_t msg;
+    ec( buildMsg(&msg, NULL ), -1, return -1 ); // init msg.content to NULL 
+    while(nextNode != NULL){
+        START_WRITE( nextNode, fs, 0, 
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1 
+        ); 
+        if(searchClientInList(clientFD, nextNode->locked_by) == 0){
+            if((nextNode->locked_by)->client_fd == clientFD){
+                // warn the 2nd locker and remove the first one
+                // remove the client
+                removeClientFromList(clientFD, &(nextNode->locked_by));
+                // warn the current locker
+                if( buildMsg(&msg, FINE_REQ_RESPONSE ) == -1 &&
+                        sendTo(clientFD, msg.content, msg.len)!=1 ){
+                    DONE_WRITE(nextNode, fs, , 
+                        ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
+                    );
+                    return -1;
+                }
+            }else{
+                // remove the client
+                removeClientFromList(clientFD, &(nextNode->locked_by));
+            }
+        }
+        DONE_WRITE(nextNode, fs, , 
+            ec( SAFE_UNLOCK(fs.mux), 1, return -1; ); return -1
+        );
+        nextNode = nextNode->next;
+    }
+    free(msg.content);
+    ec( SAFE_UNLOCK(fs.mux), 1, return -1; );
+    return 0;
 }
 
 /**
@@ -991,6 +1076,8 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
     /* update current files number */
     fs.currFilesNumber++;
     SET_MAX(fs.maxReachedFilesNumber, fs.currFilesNumber);
+    
+    //printf("\tcurrFilesNumber: %ld\n", fs.currFilesNumber);
 
     ec( icl_hash_insert(fs.hFileTable, filePtr->path, filePtr), NULL, return -1 );
 
@@ -1006,6 +1093,7 @@ int insertFile(file_t* filePtr, char performEviction, client_fd_t client_fd){
  *      0 otherwise
  */
 int evictFiles(int bytesNum, int filesNum, client_fd_t clientFd){
+    fs.performed_evictions++;
     file_t* currFile = fs.fileListHead;
     file_t* nextFile;
     while(currFile != NULL){
@@ -1032,30 +1120,63 @@ int evictFiles(int bytesNum, int filesNum, client_fd_t clientFd){
  * Delete a file
  * @param filePtr: the pointer to the file
  * @param clientFd: the client who triggered the deletion
- * @param sendContentBackToClient: says if we want to send the content back to clientFd
+ * @param isEviction: if it's due to eviction then we want to send the content back to clientFd
  * @return
  *      -1 if fatal error
  *      0 otherwise
  */
-int deleteFile(file_t* filePtr, client_fd_t clientFd, char sendContentBackToClient){
+int deleteFile(file_t* filePtr, client_fd_t clientFd, char isEviction){
     if( filePtr == NULL)
         return 0;
-    char* tempContent = NULL;
 
     // detach file from the storage
     detachFileFromStorage(filePtr);
-
     icl_hash_delete(fs.hFileTable, filePtr->path, NULL, NULL);
     fs.currFilesNumber--;
     fs.currSize -= filePtr->size;
-    int contentSize = filePtr->size;
-    tempContent = destroyFile(filePtr, 1);
-    if( sendContentBackToClient ){
-        if( sendContentToClient(clientFd, tempContent, contentSize, REMOVED_FILE_CONTENT) == -1 ){
-            free(tempContent);
+
+    int tempContentSize = filePtr->size;
+    char* filePath;
+    ec( filePath = strdup(filePtr->path), NULL, return -1);
+    char *tempContent = destroyFile(filePtr, 1);
+    if( isEviction ){
+        char* str;
+        int newLen = strlen(EVICTED_FILE_CONTENT) + MSG_LEN_LENGTH + tempContentSize;
+        char* contentLenAsString;
+        ec( (contentLenAsString = intToStr(tempContentSize, MSG_LEN_LENGTH)), NULL, return -1 );
+        ec( str = calloc(newLen + 1, sizeof(char)), NULL, return -1 );
+        if( memcpy(str, EVICTED_FILE_CONTENT, 3) == NULL || 
+                memcpy(str+3, contentLenAsString, MSG_LEN_LENGTH) == NULL ||
+                memcpy(str+3+MSG_LEN_LENGTH, tempContent, tempContentSize) == NULL ){
+            free(contentLenAsString);
+            free(str);
             return -1;
         }
+        free(contentLenAsString);
+        free(tempContent);
+        tempContent = str;
+        tempContentSize = newLen;
+
+        // send the path too. format here is: RRRLLLLLLLLLcontent
+        //filePath length
+        char* filePathLengthAsString;
+        ec( (filePathLengthAsString = intToStr(strlen(filePath), MSG_LEN_LENGTH)), NULL, return -1 );
+        // append the path length and the path
+        ec(
+            tempContent = realloc(tempContent, 
+                    tempContentSize + MSG_LEN_LENGTH + strlen(filePath)+1),
+            NULL, return -1
+        );
+        memmove(tempContent + tempContentSize, filePathLengthAsString, MSG_LEN_LENGTH);
+        memmove(tempContent + tempContentSize + MSG_LEN_LENGTH, 
+            filePath, strlen(filePath)+1); // move the '\0' too
+        tempContentSize += MSG_LEN_LENGTH + strlen(filePath);
+        // (new) format here is: RRRLLLLLLLLLcontentLLLLLLLLLfilepath
+        //printf("len:%d\ncontent:%s\n", tempContentSize, tempContent);
+        sendTo(clientFd, tempContent, tempContentSize);
+        free(filePathLengthAsString);
     }
     free(tempContent);
+    free(filePath);
     return 0;
 }
