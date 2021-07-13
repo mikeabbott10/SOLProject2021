@@ -43,11 +43,18 @@ typedef struct{
 
 char operationRes[MAX_PATH_LEN*3]; // just to be sure
 
-#define PRINT_INFO(opStr,absPath)                                       \
-    if( snprintf(operationRes, MAX_PATH_LEN*2,                          \
-            "%s %s: %s", opStr, absPath, strerror(errno)) < 0 )         \
-        return -1;                                                      \
-    printf("%s\n", operationRes);                                       \
+#define PRINT_INFO(opStr,absPath, bytes)                                        \
+    if( bytes != 0 ){                                                           \
+        if( snprintf(operationRes, MAX_PATH_LEN*2,                \
+                "%s %s %ld bytes: %s", opStr, absPath, bytes, strerror(errno)) < 0 )         \
+            return -1;                                                              \
+    }else{                                                                       \
+        if( snprintf(operationRes, MAX_PATH_LEN*2,                \
+                "%s %s: %s", opStr, absPath, strerror(errno)) < 0 )                 \
+            return -1;                                                              \
+    }                                                                           \
+    printf("%s\n", operationRes);                                               \
+
 
 //----- FILE UTILS ---------------------------------------------------
 DIR * openAndCD(char * );

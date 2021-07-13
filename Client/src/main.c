@@ -27,7 +27,6 @@ int performAppendFromFile(char* filepath, char* D_dir){
     if( getFileContent(filepath, &fileContent, &contentSize) == -1 ) return -1;
 
     appendToFile(filepath, fileContent, contentSize, D_dir);
-    if(stdout_print){ PRINT_INFO("Appending", filepath); };
 
     free(fileContent);
     return 0;
@@ -83,23 +82,18 @@ int dirVisit_n_write(DIR *dir, int *n_remaining_files, mainList_t ml, char* main
                 chdir(main_path); // go to the originary path
 
                 opRes=openFile(absPath, O_CREATE|O_LOCK);
-                if(stdout_print){ PRINT_INFO("Opening", absPath); }
                 if(opRes==0){
                     opRes=writeFile(absPath, ml.D_dirname);
-                    if(stdout_print){ PRINT_INFO("Writing", absPath); }
                     if(opRes!=0){
                         // try appending content to absPath file
                         if( performAppendFromFile(absPath, ml.D_dirname) == -1 ) return -1;
                     }
                     // the file was opened and locked, try to close/unlock it anyway
                     unlockFile(absPath);
-                    if(stdout_print){ PRINT_INFO("Unlocking", absPath); }
                     closeFile(absPath);
-                    if(stdout_print){ PRINT_INFO("Closing", absPath); };
                 }else{
                     // try to perform write only
                     opRes=writeFile(absPath, ml.D_dirname);
-                    if(stdout_print){ PRINT_INFO("Writing", absPath); }
                     if(opRes!=0){
                         // try appending content to absPath file
                         if( performAppendFromFile(absPath, ml.D_dirname) == -1 ) return -1;
@@ -161,11 +155,10 @@ int main(int argc, char **argv){
     if(ml.l_filenames != NULL){
         for(i=0; i<ml.l_itemsCount; ++i){
             if( getAbsolutePath(ml.l_filenames[i], &absPath) == -1 ){ 
-                if(stdout_print){ PRINT_INFO("Locking", absPath); }
+                if(stdout_print){ PRINT_INFO("Locking", absPath, (long)0); }
                 continue; 
             }
             lockFile(absPath);
-            if(stdout_print){ PRINT_INFO("Locking", absPath); }
             free(absPath);
             absPath = NULL;
             msleep(ml.t_time);
@@ -175,11 +168,10 @@ int main(int argc, char **argv){
     if(ml.u_filenames != NULL){
         for(i=0; i<ml.u_itemsCount; ++i){
             if( getAbsolutePath(ml.u_filenames[i], &absPath) == -1 ){ 
-                if(stdout_print){ PRINT_INFO("Unlocking", absPath); }
+                if(stdout_print){ PRINT_INFO("Unlocking", absPath, (long)0); }
                 continue; 
             }
             opRes=unlockFile(absPath);
-            if(stdout_print){ PRINT_INFO("Unlocking", absPath); }
             free(absPath);
             absPath = NULL;
             msleep(ml.t_time);
@@ -196,7 +188,7 @@ int main(int argc, char **argv){
 
         DIR *w_dir = openAndCD(ml.w_dirname);
         if(w_dir != NULL){
-            printf("Directory: %s\n", ml.w_dirname);
+            //printf("Directory: %s\n", ml.w_dirname);
             if(ml.w_n == 0) ml.w_n = -2; // visit all subdirectories
             dirVisit_n_write(w_dir, &(ml.w_n), ml, buf); // visito la cartella
             closedir(w_dir); // chiudo la cartella che avevo aperto
@@ -210,14 +202,11 @@ int main(int argc, char **argv){
             if( getAbsolutePath(ml.W_filenames[i], &absPath) == -1){ continue; }
 
             opRes=openFile(absPath, O_CREATE|O_LOCK);
-            if(stdout_print){ PRINT_INFO("Opening", absPath); }
             if(opRes!=0){ free(absPath); absPath = NULL; continue;}
             opRes=writeFile(absPath, ml.w_dirname);
-            if(stdout_print){ PRINT_INFO("Writing", absPath); }
             if(opRes!=0){
                 // try appending content to absPath file
                 if( performAppendFromFile(absPath, ml.D_dirname) == -1){ 
-                    if(stdout_print){ PRINT_INFO("Appending", absPath); }
                     free(absPath); 
                     absPath = NULL; 
                     continue; 
@@ -225,9 +214,7 @@ int main(int argc, char **argv){
             }
             //if(opRes!=0) continue; The file was opened and locked, try to close and unlock it anyway
             unlockFile(absPath);
-            if(stdout_print){ PRINT_INFO("Unlocking", absPath); }
             closeFile(absPath);
-            if(stdout_print){ PRINT_INFO("Closing", absPath); }
 
             free(absPath);
             absPath = NULL;
@@ -245,13 +232,10 @@ int main(int argc, char **argv){
             if( getAbsolutePath(ml.r_filenames[i], &absPath) == -1){ free(absPath);absPath=NULL;continue; }
 
             opRes=openFile(absPath, NO_FLAGS);
-            if(stdout_print){ PRINT_INFO("Opening", absPath); }
             if(opRes!=0){ free(absPath);absPath=NULL;continue; }
             opRes=readFile(absPath, (void**)&fileContent, &contentSize);
-            if(stdout_print){ PRINT_INFO("Reading", absPath); }
             //if(opRes!=0) continue; The file was opened, try to close it anyway
             opRes=closeFile(absPath);
-            if(stdout_print){ PRINT_INFO("Closing", absPath); }
             if(opRes!=0){ free(absPath);absPath=NULL;continue; }
 
             if(ml.d_dirname != NULL){
@@ -268,7 +252,7 @@ int main(int argc, char **argv){
                 if( getAbsolutePath(ml.d_dirname, &absPath) == -1){ free(fileContent);free(absPath); absPath = NULL;continue; }
                 if( getFilePath(&absPath, fileName) == -1){ free(fileContent);free(absPath); absPath = NULL; continue; }
                 if( writeLocalFile(absPath, fileContent, contentSize) == -1){ free(fileContent);free(absPath); absPath = NULL; continue; }
-                if(stdout_print){ PRINT_INFO("Storing", absPath); }
+                if(stdout_print){ PRINT_INFO("Storing", absPath, contentSize); }
             }//else printf("File content: %s\n", fileContent);
 
             free(absPath);
@@ -288,7 +272,6 @@ int main(int argc, char **argv){
             if( getAbsolutePath(ml.c_filenames[i], &absPath) == -1){ free(absPath);absPath=NULL;continue; }
 
             opRes=removeFile(absPath);
-            if(stdout_print){ PRINT_INFO("Removing", absPath); }
 
             free(absPath);
             absPath = NULL;

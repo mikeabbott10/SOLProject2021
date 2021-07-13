@@ -49,7 +49,7 @@ int getContentAndFilename(char* response, char* operation, char** content, size_
         *fileName = response+MSG_LEN_LENGTH+(*contentSize)+MSG_LEN_LENGTH; // no free needed
     }
 
-    if(stdout_print){ PRINT_INFO(operation, *fileName); }
+    if(stdout_print){ PRINT_INFO(operation, *fileName, *contentSize); }
 
     // debug
     // printf("info file: %ld\n", *contentSize);
@@ -88,15 +88,15 @@ int getServerResponse(const char* req_related_filepath, char attemptingToLock, /
             // response format: RRRLLLLLLLLLcontentLLLLLLLLLfilepath
             
             if(eviction_dir != NULL){
-                getContentAndFilename(response+3, "Eviction", &content, &cSize, &filename);
+                if( getContentAndFilename(response+3, "Eviction", &content, &cSize, &filename) == -1) return -1;
                 // store the new file into the directory
-                printf("eviction_dir: %s\n", eviction_dir);
+                //printf("eviction_dir: %s\n", eviction_dir);
                 ec( getAbsolutePath(eviction_dir, &temp), 1, return EXIT_FAILURE; );
-                printf("temp: %s\n", temp);
+                //printf("temp: %s\n", temp);
                 ec( getFilePath(&temp, filename), 1, free(temp);return EXIT_FAILURE; );
-                printf("temp: %s\n", temp);
+                //printf("temp: %s\n", temp);
                 ec( writeLocalFile(temp, content, cSize), -1, free(temp);return EXIT_FAILURE; );
-                if(stdout_print){ PRINT_INFO("Storing", temp); }
+                if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
                 free(temp);
                 free(content);
                 content = NULL;
@@ -109,14 +109,14 @@ int getServerResponse(const char* req_related_filepath, char attemptingToLock, /
         if(strncmp(response, READ_FILE_CONTENT, 3)==0 && isReadN){
             // procedure for a readN request
             // response format: RRRLLLLLLLLLcontentLLLLLLLLLfilepath
-            getContentAndFilename(response+3, "Reading", &content, &cSize, &filename);
+            if( getContentAndFilename(response+3, "Reading", &content, &cSize, &filename) == -1) return -1;
             
             if(readNDir != NULL){
                 // store the new file into the directory
                 ec( getAbsolutePath(readNDir, &temp), 1, return EXIT_FAILURE; );
                 ec( getFilePath(&temp, filename), 1, free(temp);return EXIT_FAILURE; );
                 ec( writeLocalFile(temp, content, cSize), -1, free(temp);return EXIT_FAILURE; );
-                if(stdout_print){ PRINT_INFO("Storing", temp); }
+                if(stdout_print){ PRINT_INFO("Storing", temp, cSize); }
                 free(temp);
                 temp = NULL;
             }else{
@@ -251,7 +251,9 @@ int openFile(const char* pathname, int flags){
         return -1;
     }
     free(msg.content);
-    return getServerResponse(pathname, flags&O_LOCK, NULL, 0, 0, NULL, NULL);
+    int res = getServerResponse(pathname, flags&O_LOCK, NULL, 0, 0, NULL, NULL);
+    if(stdout_print){ PRINT_INFO("Opening", pathname, (long)0); }
+    return res;
 }
 
 /**
@@ -269,7 +271,9 @@ int closeFile(const char* pathname){
     }
     free(msg.content);
 
-    return getServerResponse(pathname, 0, NULL, 0, 0, NULL, NULL);
+    int res = getServerResponse(pathname, 0, NULL, 0, 0, NULL, NULL);
+    if(stdout_print){ PRINT_INFO("Closing", pathname, (long)0); }
+    return res;
 }
 
 /**
@@ -285,7 +289,9 @@ int lockFile(const char* pathname){
         return -1;
     }
     free(msg.content);
-    return getServerResponse(pathname, 1, NULL, 0, 0, NULL, NULL);
+    int res = getServerResponse(pathname, 1, NULL, 0, 0, NULL, NULL);
+    if(stdout_print){ PRINT_INFO("Locking", pathname, (long)0); }
+    return res;
 }
 
 /**
@@ -301,7 +307,10 @@ int unlockFile(const char* pathname){
         return -1;
     }
     free(msg.content);
-    return getServerResponse(pathname, 0, NULL, 0, 0, NULL, NULL);
+
+    int res = getServerResponse(pathname, 0, NULL, 0, 0, NULL, NULL);
+    if(stdout_print){ PRINT_INFO("Unlocking", pathname, (long)0); }
+    return res;
 }
 
 /**
@@ -317,7 +326,9 @@ int removeFile(const char* pathname){
         return -1;
     }
     free(msg.content);
-    return getServerResponse(pathname, 0, NULL, 0, 0, NULL, NULL);
+    int res = getServerResponse(pathname, 0, NULL, 0, 0, NULL, NULL);
+    if(stdout_print){ PRINT_INFO("Removing", pathname, (long)0); }
+    return res;
 }
 
 /**
@@ -335,7 +346,10 @@ int readFile(const char* pathname, void** buf, size_t* size){
         return -1;
     }
     free(msg.content);
-    return getServerResponse(pathname, 0, buf, size, 0, NULL, NULL);
+    
+    int res = getServerResponse(pathname, 0, buf, size, 0, NULL, NULL);
+    if(stdout_print){ PRINT_INFO("Reading", pathname, *size); }
+    return res;
 }
 
 /**
@@ -354,15 +368,17 @@ int readNFiles(int N, const char* dirname){
         return -1;
     }
     free(msg.content);
-    free(N_str);
-    return getServerResponse(NULL, 0, NULL, 0, 1, dirname, NULL);
+    free(N_str);    
+    int res = getServerResponse(NULL, 0, NULL, 0, 1, dirname, NULL);
+    if(stdout_print){ PRINT_INFO("Reading N files", "", (long)0); }
+    return res;
 }
 
 /**
  * Send a write file request to the server.
  * @param pathname: the path of the file
  * @param dirname: the path of the directory we are going to store the eventually evicted files in
- * @return: 0 if files are read, -1 if we fail (errno is setted up)
+ * @return: 0 if file was written, -1 if we fail (errno is setted up)
  */
 int writeFile(const char* pathname, const char* dirname){
     //printf("\t\tdir: %s\n", dirname);
@@ -379,7 +395,9 @@ int writeFile(const char* pathname, const char* dirname){
     }
     free(msg.content);
     free(fileContent);
-    return getServerResponse(pathname, 0, NULL, 0, 0, NULL, dirname);
+    int res = getServerResponse(pathname, 0, NULL, 0, 0, NULL, dirname);
+    if(stdout_print){ PRINT_INFO("Writing", pathname, contentSize); }
+    return res;
 }
 
 
@@ -391,5 +409,7 @@ int appendToFile(const char* pathname, void* buf, size_t size, const char* dirna
         return -1;
     }
     free(msg.content);
-    return getServerResponse(pathname, 0, NULL, 0, 0, NULL, dirname);
+    int res = getServerResponse(pathname, 0, NULL, 0, 0, NULL, dirname);
+    if(stdout_print){ PRINT_INFO("Appending", pathname, size); }
+    return res;
 }

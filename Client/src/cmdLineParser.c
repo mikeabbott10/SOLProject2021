@@ -139,27 +139,11 @@ int parseCmdLine(int argc, char**argv, mainList_t *ml){
 void freeList(mainList_t ml){
     /* print main list*/
     /* printf("mainList:\n"); */
-    if(ml.f_socketpath!=NULL){ 
-        /* printf("char *f_socketpath -> %s\n", ml.f_socketpath); */
-        free(ml.f_socketpath);
-    }
-    if(ml.w_dirname!=NULL) {
-        /* printf("char *w_dirname -> %s\n", ml.w_dirname);
-        printf("int w_n -> %d\n", ml.w_n); */
-        free(ml.w_dirname);
-    }
-    if(ml.D_dirname!=NULL) {
-        /* printf("char *D_dirname -> %s\n", ml.D_dirname);
-        printf("int R_n -> %d\n", ml.R_n); */
-        free(ml.D_dirname);
-    }
-    if(ml.d_dirname!=NULL){
-        /* printf("char* d_dirname -> %s\n", ml.d_dirname); */
-        free(ml.d_dirname);
-    }
-        /* printf("int t_time -> %d\n", ml.t_time);
-        printf("char p -> %d\n", ml.p); */
-
+    free(ml.f_socketpath);
+    free(ml.w_dirname);
+    free(ml.D_dirname);
+    free(ml.d_dirname);
+    
     if(ml.W_filenames!=NULL){
         /* printf( "char **W_filenames -> "); */
         freeStuff(ml.W_filenames, ml.W_itemsCount);

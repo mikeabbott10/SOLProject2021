@@ -15,13 +15,14 @@ acquire globale - cerca file - operazione - release globale
 */
 /*----------- Util --------------------------------------------------------------------------------*/
 /* Print the storage*/
-void printFs(){
-    /*file_t* currNode = fs.fileListHead;
+/*void printFs(){
+    file_t* currNode = fs.fileListHead;
     while(currNode != NULL){
         printf("%s\n %d\n", currNode->path, currNode->content != NULL);
         currNode = currNode->next;
-    }*/
-}
+    }
+}*/
+
 /**
  * Look for the file at path
  * @param path: the file path
@@ -294,7 +295,7 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             return 1;
         }
 
-        puts("file doesn't exist"); printFs();
+        //puts("file doesn't exist"); printFs();
 
         // the new file has been successfully inserted
         START_WRITE(file, fs, 1, return -1);
@@ -325,7 +326,7 @@ int openFile(msg_t* msgPtr, client_fd_t client_fd, char flags, char* file_path){
             return 1;
         }
 
-        puts("file exists"); printFs();
+        //puts("file exists"); printFs();
 
         if(fs.eviction_policy == LRU)
             getFsFileToTail(file);
