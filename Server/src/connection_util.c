@@ -26,20 +26,6 @@ char spawnWorkers(int n, workerFun F){
 }
 
 /**
- * Perform a clean exit from the master thread
- * @param listen_fd: the file descriptor to close
- */
-void master_clean_exit(int listen_fd, int* int_arr){
-    globalQuit = 1;
-    if(master_progress>=1) close(listen_fd);
-    if(master_progress>=2) free(int_arr);
-    shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);
-
-    pthread_exit(NULL);
-    //exit(EXIT_FAILURE);
-}
-
-/**
  * Get the highest index from active descriptors
  * @return the highest index
  */

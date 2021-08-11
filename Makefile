@@ -29,7 +29,7 @@ test1: test/test1.sh Client/bin/client Server/bin/server
 	socket_path=../LSOfiletorage.sk\n\
 	eviction_policy=0\n\
 	#end_of_config" > ./Server/src/config.txt
-	(cd Server && ((valgrind --leak-check=full bin/server > ../log.txt 2>&1) & echo $$! > $(SERVERPID) &) )
+	(cd Server && ((valgrind --leak-check=full --show-leak-kinds=all bin/server > ../log.txt 2>&1) & echo $$! > $(SERVERPID) &) )
 	./test/test1.sh
 	if [ -e server.PID ]; then \
 	    kill -1 $$(cat server.PID) || true; \
@@ -44,7 +44,7 @@ test2_1: test/test2_1.sh Client/bin/client Server/bin/server
 	socket_path=../LSOfiletorage.sk\n\
 	eviction_policy=1\n\
 	#end_of_config" > ./Server/src/config.txt
-	(cd Server && ((valgrind --leak-check=full bin/server > ../log.txt 2>&1) & echo $$! > $(SERVERPID) &) )
+	(cd Server && ((valgrind --leak-check=full --show-leak-kinds=all bin/server > ../log.txt 2>&1) & echo $$! > $(SERVERPID) &) )
 	./test/test2_1.sh
 	if [ -e server.PID ]; then \
 	    kill -1 $$(cat server.PID) || true; \
@@ -59,7 +59,7 @@ test2_2: test/test2_2.sh Client/bin/client Server/bin/server
 	socket_path=../LSOfiletorage.sk\n\
 	eviction_policy=0\n\
 	#end_of_config" > ./Server/src/config.txt
-	(cd Server && ((valgrind --leak-check=full bin/server > ../log.txt 2>&1) & echo $$! > $(SERVERPID) &) )
+	(cd Server && ((valgrind --leak-check=full --show-leak-kinds=all bin/server > ../log.txt 2>&1) & echo $$! > $(SERVERPID) &) )
 	./test/test2_2.sh
 	if [ -e server.PID ]; then \
 	    kill -1 $$(cat server.PID) || true; \

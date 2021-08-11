@@ -23,10 +23,10 @@ server_config_t config_struct;
 
 pthread_t sig_handler_tid;
 sigset_t procOldMask;
-sigset_t procCurrentMask;
+sigset_t *procCurrentMaskPtr;
 
 char parseConfigFile(char*); 
-sigset_t initSigMask();
+sigset_t *initSigMask();
 void restoreOldMask();
 
 #endif

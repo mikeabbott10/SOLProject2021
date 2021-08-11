@@ -169,17 +169,24 @@ char parseConfigFile(char* configFilePath){
  * Initialize sigmask for the server process
  * @return the new set
  */
-sigset_t initSigMask(){
-    sigset_t set;
+sigset_t* initSigMask(){
+    // Note that SIGPIPE is thrown when we try to write to a closed fd
+    struct sigaction saa;
+    memset(&saa, 0, sizeof(saa));
+    // we will ignore SIGPIPE
+    saa.sa_handler = SIG_IGN;
+    ec( sigaction(SIGPIPE, &saa, NULL), -1, return NULL );
+
+    sigset_t* set = NULL;
+    ec( set=malloc(sizeof(sigset_t)), NULL, return NULL );
     /*we want to handle these signals, we will do it with sigwait*/
-    ec( sigemptyset(&set), -1, exit(EXIT_FAILURE) ); /*empty mask*/
-    ec( sigaddset(&set, SIGINT), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
-    ec( sigaddset(&set, SIGQUIT), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
-    ec( sigaddset(&set, SIGTSTP), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
-    ec( sigaddset(&set, SIGHUP), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
-    /*Note that SIGPIPE is thrown when we try to write to a closed fd*/
-    ec( sigaddset(&set, SIGPIPE), -1, exit(EXIT_FAILURE) ); /* it will be handled with sigwait only */
-    ec( pthread_sigmask(SIG_SETMASK, &set, &procOldMask), -1, exit(EXIT_FAILURE) );
+    ec( sigemptyset(set), -1, free(set); return NULL ); /*empty mask*/
+    ec( sigaddset(set, SIGINT), -1, free(set); return NULL ); /* it will be handled with sigwait only */
+    ec( sigaddset(set, SIGQUIT), -1, free(set); return NULL ); /* it will be handled with sigwait only */
+    ec( sigaddset(set, SIGTSTP), -1, free(set); return NULL ); /* it will be handled with sigwait only */
+    ec( sigaddset(set, SIGHUP), -1, free(set); return NULL ); /* it will be handled with sigwait only */
+    
+    ec( pthread_sigmask(SIG_SETMASK, set, &procOldMask), -1, free(set); return NULL );
     return set;
 }
 

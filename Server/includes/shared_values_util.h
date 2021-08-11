@@ -38,17 +38,17 @@ SHARED_VALUE_WRITE(sharedStruct,
         }                                                               \
     }                                                                   \
         
-/* Read, fair non fifo policy */
+/* Read, fair fifo policy */
 #define SHARED_VALUE_READ(s, c, errorProc)      \
     ec( startRead_fair(&s), -1, errorProc );    \
     c                                           \
     ec( doneRead_fair(&s), -1, errorProc );     \
 
-/* Write, fair non fifo policy */
-#define SHARED_VALUE_WRITE(s, c, errorProc)     \
-    ec( startWrite_fair(&s), -1, errorProc );    \
-    c                                           \
-    ec( doneWrite_fair(&s), -1, errorProc );     \
+/* Write, fair fifo policy */
+#define SHARED_VALUE_WRITE(s, c, errorProc)         \
+    ec( startWrite_fair_fifo(&s), -1, errorProc );  \
+    c                                               \
+    ec( doneWrite_fair_fifo(&s), -1, errorProc );   \
 
 // shared struct
 typedef struct{

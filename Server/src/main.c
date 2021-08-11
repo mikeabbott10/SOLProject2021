@@ -15,64 +15,51 @@
 #include <sys/syscall.h>
 #define UNIX_PATH_MAX 108 /* man 7 unix */
 
-/* get up the progress levels (we use them for clean quits) */
-#define progress_level_up progress_level++
-#define master_progress_level_up master_progress++
-
 void* signal_handler_fun(void*);
 void* workers_fun(void*);
 void* master_fun(void*);
 void quit();
 
 int main(int args, char** argv){
-    atexit(quit);
-
     /*get information from config file*/
-    ec(parseConfigFile("./src/config.txt"), EXIT_FAILURE, exit(EXIT_FAILURE) );
-    progress_level_up;
+    ec(parseConfigFile("./src/config.txt"), EXIT_FAILURE, return EXIT_FAILURE );
 
-    /*eventually delete an existing socket*/
+    /*possibly delete an existing socket*/
     remove(config_struct.socket_path);
     
     /*create the (bounded) client_fd buffer, it will be shared between master and worker threads*/
     ec(clientBuffer = shared_buffer_create(client_fd_buffer, client_fd_t, 
-        config_struct.max_connections_buffer_size), NULL, exit(EXIT_FAILURE) 
+        config_struct.max_connections_buffer_size), NULL, goto cleanup1 
     );
-    progress_level_up;
 
     /*initialize the signal mask*/
-    procCurrentMask = initSigMask(); /*if it fails exit(EXIT_FAILURE) is called*/
+    ec( procCurrentMaskPtr = initSigMask(), NULL, goto cleanup2 );
     
     /*init pipe to get messages from the workers*/
-    ec( pipe(pipefd), -1, exit(EXIT_FAILURE) );
-    progress_level_up;
+    ec( pipe(pipefd), -1, goto cleanup3 );
 
     /*init pipe to get messages from signal handler*/
-    ec( pipe(signalPipefd), -1, exit(EXIT_FAILURE) );
-    progress_level_up;
+    ec( pipe(signalPipefd), -1, goto cleanup4 );
 
     ec( initFileSystem(config_struct.file_capacity, 
             config_struct.byte_capacity, config_struct.eviction_policy), -1, 
-        exit(EXIT_FAILURE) 
+        goto cleanup5
     );
-    progress_level_up;
 
     //init synchronization struct for the shared value
-    INIT_SHARED_STRUCT(currentClientConnections, int, 0, exit(EXIT_FAILURE);, 
+    INIT_SHARED_STRUCT(currentClientConnections, int, 0, goto cleanup6;, 
         free(currentClientConnections.value);
-        exit(EXIT_FAILURE);
+        goto cleanup6;
     );
-    progress_level_up;
 
     /*start signal handler thread (sig_handler_tid is the id)*/
-    ec_n( pthread_create(&sig_handler_tid, NULL, signal_handler_fun, NULL), 0, exit(EXIT_FAILURE) );
+    ec_n( pthread_create(&sig_handler_tid, NULL, signal_handler_fun, NULL), 0, goto cleanup7 );
 
     /*start the master thread*/
-    ec_n( pthread_create(&master_tid, NULL, master_fun, NULL), 0, exit(EXIT_FAILURE) );
+    ec_n( pthread_create(&master_tid, NULL, master_fun, NULL), 0, goto cleanup7 );
 
     /*start the worker threads*/
-    ec( spawnWorkers(config_struct.worker_threads, &workers_fun), EXIT_FAILURE, exit(EXIT_FAILURE) );
-    progress_level_up;
+    ec( spawnWorkers(config_struct.worker_threads, &workers_fun), EXIT_FAILURE, goto cleanup7 );
 
     pthread_join(sig_handler_tid, NULL);
     pthread_join(master_tid, NULL);
@@ -83,6 +70,17 @@ int main(int args, char** argv){
     int i = 0;
     for(;i<config_struct.worker_threads ; ++i)
         pthread_join(worker_threads[i], NULL);
+
+    // cleanup procedure
+    free(worker_threads);
+    cleanup7: destroySharedStruct(&currentClientConnections);
+    cleanup6: destroyFileSystem();
+    cleanup5: close(signalPipefd[0]); close(signalPipefd[1]);
+    cleanup4: close(pipefd[0]); close(pipefd[1]);
+    cleanup3: free(procCurrentMaskPtr);
+    cleanup2: shared_buffer_free(client_fd_buffer, client_fd_t, clientBuffer);
+    cleanup1: free(config_struct.socket_path);
+    //restoreOldMask();
 
     return EXIT_SUCCESS;
 }
@@ -209,22 +207,25 @@ void* workers_fun(void* p){
  */
 void * master_fun(void* p){
     int quit_level = 0;
-    /*init socket*/
+    // init socket 
     int listenfd;
     ec( listenfd = socket(AF_UNIX, SOCK_STREAM, 0), -1, return NULL );
-    master_progress_level_up;
     
-    /*bind and listen on listenfd*/
+    // bind and listen on listenfd
     struct sockaddr_un serv_addr;
     memset(&serv_addr, '0', sizeof(serv_addr));
     serv_addr.sun_family = AF_UNIX;
     strncpy(serv_addr.sun_path, config_struct.socket_path, strlen(config_struct.socket_path)+1);
     errno = 0;
     ec( bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)), -1, 
-        master_clean_exit(listenfd, NULL)
+        pthread_kill(sig_handler_tid, SIGINT);
+        goto cleanup;
     );
     errno = 0;
-    ec( listen(listenfd, SOMAXCONN), -1, master_clean_exit(listenfd, NULL));
+    ec( listen(listenfd, SOMAXCONN), -1, 
+        pthread_kill(sig_handler_tid, SIGINT); 
+        goto cleanup;
+    );
     
     /*init set and temporary set*/
     fd_set set, tmpset;
@@ -241,7 +242,6 @@ void * master_fun(void* p){
     
     int i;
     int *fds_from_pipe = calloc(100, sizeof(int));
-    master_progress_level_up;
 
     int connfd;
 
@@ -252,19 +252,18 @@ void * master_fun(void* p){
                 break;
             ,
             // on fatal error
-            pthread_kill(sig_handler_tid, SIGINT);
-            break;
+            pthread_kill(sig_handler_tid, SIGINT); break;
         );
     	tmpset = set;
         ec( select(fdmax+1, &tmpset, NULL, NULL, NULL), -1, 
-            master_clean_exit(listenfd, fds_from_pipe) 
+            pthread_kill(sig_handler_tid, SIGINT); break;
         );
     	/* what fd did we get a request from?*/
     	for(int fd=0; fd <= fdmax; fd++) {
     	    if (FD_ISSET(fd, &tmpset)) {
         		if (fd == listenfd && quit_level == 0) { /* new connection */
                     ec( connfd = accept(listenfd, (struct sockaddr*)NULL ,NULL), -1, 
-                        master_clean_exit(listenfd, fds_from_pipe) 
+                        pthread_kill(sig_handler_tid, SIGINT); break;
                     );
                     //puts("new conn");
 
@@ -273,8 +272,7 @@ void * master_fun(void* p){
                         (*((int*) currentClientConnections.value))++;
                         ,
                         // fatal error occurred
-                        pthread_kill(sig_handler_tid, SIGINT);
-                        break;
+                        pthread_kill(sig_handler_tid, SIGINT); break;
                     );
 
                     FD_SET(connfd, &set);  /* fd added to the master set*/
@@ -304,15 +302,17 @@ void * master_fun(void* p){
                 //printf("putting client %d in buffer\n", connfd);
                 if( shared_buffer_put(client_fd_buffer, client_fd_t, clientBuffer, connfd) != 0 ){
                     // fatal error occurred
-                    pthread_kill(sig_handler_tid, SIGINT);
-                    break;
+                    pthread_kill(sig_handler_tid, SIGINT); break;
                 }
     	    }
     	}
     }
-    globalQuit = 1;
-    free(fds_from_pipe);
+
     close(listenfd);
+    cleanup: free(fds_from_pipe);
+    globalQuit = 1;
+    shared_buffer_artificial_signal(client_fd_buffer, client_fd_t, clientBuffer);
+
     return NULL;
 }
 
@@ -324,35 +324,19 @@ void * signal_handler_fun(void* p){
     int sig;
     int pip;
     while(1){
-        sigwait(&procCurrentMask, &sig); // won't be woken up if a signal is sent to a specific thread
+        // won't be woken up if a signal is sent to a specific thread
+        sigwait(procCurrentMaskPtr, &sig);
         if(sig == SIGINT || sig == SIGQUIT){
-            /*kill the process asap. No more accepts. Close the active connections now. 
-            (Print the stats)*/
+            // kill the process asap. No more accepts. Close the active connections now. 
             pip = HARD_QUIT;
-            ec( write(signalPipefd[1], &pip, sizeof(pip)), -1, exit(EXIT_FAILURE) );
+            ec( write(signalPipefd[1], &pip, sizeof(pip)), -1, break );
             break;
         }else if(sig == SIGHUP){
-            /*kill the process. No more accepts. Wait for clients to close connections. 
-            (Print the stats)*/
+            // kill the process. No more accepts. Wait for clients to close connections. 
             pip = SOFT_QUIT;
-            ec( write(signalPipefd[1], &pip, sizeof(pip)), -1, exit(EXIT_FAILURE) );
+            ec( write(signalPipefd[1], &pip, sizeof(pip)), -1, break );
             break;
         }
     }
     return NULL;
-}
-
-/**
- * Cleaning up routine. Frees allocated memory, restore process original mask.
- */
-void quit(){
-    if(progress_level>=1) free(config_struct.socket_path);
-    if(progress_level>=2) shared_buffer_free(client_fd_buffer, client_fd_t, clientBuffer);
-    if(progress_level>=3) { close(pipefd[0]); close(pipefd[1]); }
-    if(progress_level>=4) { close(signalPipefd[0]); close(signalPipefd[1]); }
-    if(progress_level>=5) { destroyFileSystem(); }
-    if(progress_level>=6) { destroySharedStruct(&currentClientConnections); }
-    if(progress_level>=7) { free(worker_threads); }
-    
-    //restoreOldMask();
 }

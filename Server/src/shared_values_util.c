@@ -1,4 +1,3 @@
-//#define _GNU_SOURCE
 #include<shared_values_util.h>
 #include <stdio.h>
 #include <stdlib.h>
